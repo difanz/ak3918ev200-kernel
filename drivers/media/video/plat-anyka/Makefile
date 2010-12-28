@@ -1,3 +1,6 @@
+# sensor 
+obj-$(CONFIG_SENSOR_NT99141)+= camera_nt99141.o
+
 # wrap sensor
 obj-$(CONFIG_LINUX_AKSENSOR)   += wrap_sensor.o aksensor.o
 
