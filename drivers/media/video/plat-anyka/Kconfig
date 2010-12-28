@@ -1,0 +1,6 @@
+config SENSOR_NT99141
+	tristate "nt99141 sensor support"
+	depends on LINUX_AKSENSOR
+	help
+	  This is a nt99141 sensor driver
+
