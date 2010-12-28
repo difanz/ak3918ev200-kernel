@@ -1,3 +1,9 @@
+config SENSOR_OV7725
+	tristate "ov7725 sensor support"
+	depends on LINUX_AKSENSOR
+	help
+	  This is a ov7725 sensor driver
+	  
 config SENSOR_NT99141
 	tristate "nt99141 sensor support"
 	depends on LINUX_AKSENSOR
