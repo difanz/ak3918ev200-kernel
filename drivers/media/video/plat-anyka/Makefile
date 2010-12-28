@@ -1,4 +1,5 @@
 # sensor 
+obj-$(CONFIG_SENSOR_OV7725)   += camera_ov7725.o
 obj-$(CONFIG_SENSOR_NT99141)+= camera_nt99141.o
 
 # wrap sensor
