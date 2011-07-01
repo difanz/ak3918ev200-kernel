@@ -5,3 +5,8 @@ menuconfig ION
 	help
 	  Chose this option to enable the ION Memory Manager.
 
+config ION_AK
+	tristate "Ion for AK"
+	depends on ION
+	help
+	  Choose this option if you wish to use ion on an AK platform.
