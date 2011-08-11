@@ -10,7 +10,7 @@ obj-n               :=
 obj-                :=
 
 # Core support for all Anyka SoCs
-obj-y			+= clock.o cpu.o time.o l2cache.o irq.o reset.o reboot.o adc.o
+obj-y			+= clock.o cpu.o time.o l2cache.o irq.o reset.o reboot.o adc.o ak39-gpio.o gpio.o
 
 
 # chip extra interface
