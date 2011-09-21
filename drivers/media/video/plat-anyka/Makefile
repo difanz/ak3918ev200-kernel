@@ -1,5 +1,6 @@
 # sensor 
 obj-$(CONFIG_SENSOR_GC0308)   += camera_gc0308.o 
+obj-$(CONFIG_SENSOR_OV2643)   += camera_ov2643.o
 obj-$(CONFIG_SENSOR_OV7725)   += camera_ov7725.o
 obj-$(CONFIG_SENSOR_HM1375)   += camera_hm1375.o
 obj-$(CONFIG_SENSOR_NT99141)+= camera_nt99141.o
