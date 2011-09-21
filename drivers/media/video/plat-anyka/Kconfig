@@ -1,3 +1,9 @@
+config SENSOR_GC0308
+	tristate "gc0308 sensor support"
+	depends on LINUX_AKSENSOR
+	help
+	  This is a gc0308 sensor driver
+	  
 config SENSOR_OV7725
 	tristate "ov7725 sensor support"
 	depends on LINUX_AKSENSOR
