@@ -22,6 +22,12 @@ config SENSOR_HM1375
 	help
 	  This is a hm1375 sensor driver
 	  
+config SENSOR_OV9712
+	tristate "ov9712 sensor support"
+	depends on LINUX_AKSENSOR
+	help
+	  This is a ov9712 sensor driver
+	  
 config SENSOR_OV2710
 	tristate "ov2710 sensor support"
 	depends on LINUX_AKSENSOR
