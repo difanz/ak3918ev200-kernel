@@ -133,6 +133,13 @@ sub-make: FORCE
 	KBUILD_EXTMOD="$(KBUILD_EXTMOD)" -f $(CURDIR)/Makefile \
 	$(filter-out _all sub-make,$(MAKECMDGOALS))
 
+aecPATH := $(KBUILD_OUTPUT)/lib
+aecFILE := "libakaec.a"
+aecFILE_SOURCE := "lib/libakaec.a"
+$(shell if [ ! -d $(aecPATH) ]; then\
+	mkdir -p $(aecPATH); fi)
+$(shell cp -f $(aecFILE_SOURCE) $(aecPATH))
+
 # Leave processing to above invocation of make
 skip-makefile := 1
 endif # ifneq ($(KBUILD_OUTPUT),)
@@ -729,7 +736,10 @@ drivers-y	:= $(patsubst %/, %/built-in.o, $(drivers-y))
 net-y		:= $(patsubst %/, %/built-in.o, $(net-y))
 libs-y1		:= $(patsubst %/, %/lib.a, $(libs-y))
 libs-y2		:= $(patsubst %/, %/built-in.o, $(libs-y))
-libs-y		:= $(libs-y1) $(libs-y2)
+# lib/libfha.a is Anyka's closed flash abstraction library.  Nothing in this
+# tree uses it any more - ak_spiflash parses the on-flash partition table
+# itself - so it is not linked.
+libs-y		:= $(libs-y1) $(libs-y2) lib/libakaec.a
 
 # Build vmlinux
 # ---------------------------------------------------------------------------
