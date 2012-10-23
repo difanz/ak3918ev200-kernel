@@ -10,7 +10,7 @@ obj-n               :=
 obj-                :=
 
 # Core support for all Anyka SoCs
-obj-y			+= clock.o cpu.o time.o l2cache.o irq.o
+obj-y			+= clock.o cpu.o time.o l2cache.o irq.o reset.o
 
 
 # Power Management support
