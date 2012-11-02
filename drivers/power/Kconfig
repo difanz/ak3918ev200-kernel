@@ -307,4 +307,12 @@ config AB8500_BATTERY_THERM_ON_BATCTRL
 	help
 	  Say Y to enable battery temperature measurements using
 	  thermistor connected on BATCTRL ADC.
+
+config BATTERY_AK
+	tristate "Anyka Battery driver support"
+	depends on ARCH_AK39
+	help
+	  Say Y to enable support for the anyka battery from SOCLE.
+
+
 endif # POWER_SUPPLY
