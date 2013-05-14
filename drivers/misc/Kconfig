@@ -502,6 +502,12 @@ config MAX8997_MUIC
 	  Maxim MAX8997 PMIC.
 	  The MAX8997 MUIC is a USB port accessory detector and switch.
 
+config AK_MOTOR
+	tristate "Anyka Motor Support"
+	default n
+	help
+	  If you say yes here you get support for the Anyka Motor device.
+
 config AK_DAC_CLOCK
 	tristate "Anyka Ak98 Dac Clock"
 	depends on ARCH_AK39
