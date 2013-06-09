@@ -13,5 +13,8 @@ obj-                :=
 obj-y			+= clock.o cpu.o time.o l2cache.o irq.o reset.o reboot.o adc.o
 
 
+# chip extra interface
+obj-$(CONFIG_AK39_PWM_TIMER)		+= pwm_timer.o
+
 # Power Management support
 obj-$(CONFIG_AK39_PM)       += pm.o
