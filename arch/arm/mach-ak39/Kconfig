@@ -21,6 +21,49 @@ config CPU_AK3918EV200
 	bool
 	depends on CPU_AK3918
 
+# Machine support
+choice
+	prompt "ANYKA AK39xx boards"
+	default ARCH_SDK3910
+	depends on ARCH_AK39
+
+config ARCH_SDK3910
+	bool "SDK3910"
+	depends on ARCH_AK39
+	select CPU_AK3910
+	help
+	  Say Y here if you are using the SDK3910(Athena v2 borad) on chip AK3910
+
+config ARCH_AIMER39_AK3916
+	bool "Aimer39 AK3916 board"
+	depends on ARCH_AK39
+	select CPU_AK3916
+	help
+	  Say Y here if you are using the Aimer39_AK3916_MB_v1.0.0 board on chip AK3916
+
+config ARCH_AIMER39_AK3918
+	bool "Aimer39 AK3918 board"
+	depends on ARCH_AK39
+	select CPU_AK3918
+	help
+	  Say Y here if you are using the Aimer39_AK3918_MB_v1.0.0 board on chip AK3918
+
+config ARCH_AK3918EN080_V200
+	bool "AK3918EN080 V200 board"
+	depends on ARCH_AK39
+	select CPU_AK3918
+	select CPU_AK3918EV200
+	select AK_USER_GPIO
+	help
+	  Say Y here if you are using the AK3918EN080 V200 board (a.k.a
+	  Cloud39EV2 AK3918E80PIN_MNBD or Cloud39EV2_AK3918E80PIN_MNBD).
+	  Its GPIO map differs from the Aimer39 reference board: pan and
+	  tilt motors, SD card detect, Wi-Fi enable, IR-cut, the IR and
+	  white illuminators and the speaker amplifier are all on
+	  different pins.
+
+endchoice
+
 # aisc cpufreq set
 config ASIC_FREQ_VALUE
 	int "Config asic frequency(if asic>100MHz asic=vclk; else asic=vclk/2)"
@@ -38,6 +81,12 @@ config AK39_PM
 	depends on PM && ARCH_AK39
 	help
 	Say Y here if you want support power management for AK39.
+
+config AK39_CPUFREQ
+	bool "ak39 Frequency scaling support"
+	depends on CPU_FREQ && ARCH_AK39
+	help
+	  Say Y here, CPU Frequency scaling support for AK39 SoC CPUs.
 
 # chip extra controller lib
 config AK39_PWM_TIMER
