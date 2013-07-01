@@ -1010,6 +1010,19 @@ config ARCH_ZYNQ
 	select USE_OF
 	help
 	  Support for Xilinx Zynq ARM Cortex A9 Platform
+
+config ARCH_AK39
+	bool "ANYKA AK39XX"
+	select CPU_ARM926T
+	select GENERIC_GPIO
+	select ARCH_REQUIRE_GPIOLIB
+	select CLKDEV_LOOKUP
+#   select WIRELESS_EXT
+	select ARCH_USES_GETTIMEOFFSET
+	select ARCH_HAS_CPUFREQ
+	help
+	  Support for Anyka AK39xx series Chips platform.
+
 endchoice
 
 #
@@ -1127,6 +1140,8 @@ source "arch/arm/plat-versatile/Kconfig"
 source "arch/arm/mach-vt8500/Kconfig"
 
 source "arch/arm/mach-w90x900/Kconfig"
+
+source "arch/arm/mach-ak39/Kconfig"
 
 # Definitions to make life easier
 config ARCH_ACORN

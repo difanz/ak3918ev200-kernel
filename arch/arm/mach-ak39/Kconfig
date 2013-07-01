@@ -1,0 +1,13 @@
+# linux/arch/arm/mach-ak39/Kconfig
+#
+# Copyright 2013 Anaka Microelectronics
+#
+# Licensed under GPLv2
+ 
+# define CPU TYPE FLAGS 
+config CPU_AK3910
+	bool
+config CPU_AK3916
+	bool
+config CPU_AK3918
+	bool
