@@ -11,3 +11,7 @@ obj-                :=
 
 # Core support for all Anyka SoCs
 obj-y			+= clock.o cpu.o time.o l2cache.o
+
+
+# Power Management support
+obj-$(CONFIG_AK39_PM)       += pm.o
