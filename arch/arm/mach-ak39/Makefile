@@ -19,6 +19,7 @@ obj-y			+= cpu.o time.o irq.o clock.o	\
 
 # chip extra interface
 obj-$(CONFIG_AK39_PWM_TIMER)		+= pwm_timer.o
+obj-$(CONFIG_AK_ISP_CHAR)		+= ispdrv_interface.o
 
 # Power Management support
 obj-$(CONFIG_AK39_PM)       += pm.o
