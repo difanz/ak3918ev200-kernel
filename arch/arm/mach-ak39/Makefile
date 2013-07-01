@@ -10,4 +10,4 @@ obj-n               :=
 obj-                :=
 
 # Core support for all Anyka SoCs
-obj-y			+= clock.o cpu.o
+obj-y			+= clock.o cpu.o time.o
