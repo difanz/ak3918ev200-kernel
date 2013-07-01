@@ -30,3 +30,11 @@ config ASIC_FREQ_VALUE
 	help
 	  config ak39xx asic frequency when the kernel uncompress.
 	  note: vclk be equal to even asic.
+
+# power managerment
+comment "Power management"
+config AK39_PM
+	bool "ak39 Power Management support"
+	depends on PM && ARCH_AK39
+	help
+	Say Y here if you want support power management for AK39.
