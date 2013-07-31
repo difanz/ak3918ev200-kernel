@@ -34,6 +34,12 @@ config SENSOR_OV2710
 	help
 	  This is a ov2710 sensor driver
 
+config SENSOR_AR0130
+	tristate "ar0130 sensor support"
+	depends on LINUX_AKSENSOR
+	help
+	  This is a ar0130 sensor driver
+
 config SENSOR_NT99141
 	tristate "nt99141 sensor support"
 	depends on LINUX_AKSENSOR
