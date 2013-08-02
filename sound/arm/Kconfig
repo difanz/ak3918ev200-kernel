@@ -18,6 +18,18 @@ config SND_AK_PCM
 	  ALSA sound driver fo the AK ADC/DAC.
 	  
 choice
+	prompt "Select codec"
+	depends on SND_AK_PCM
+
+config CODEC_AK39
+	bool "AK39 internal codec"
+	depends on SND_AK_PCM
+	help
+	  ak39 SoC audio codec.
+	  	  
+endchoice
+	  	  
+choice
 	prompt "HP/Speaker switch mode"
 	depends on SND_AK_PCM
 	
