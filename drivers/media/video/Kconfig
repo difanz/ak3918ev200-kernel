@@ -1057,6 +1057,8 @@ config SOC_CAMERA_OV9740
 	help
 	  This is a ov9740 camera driver
 
+source "drivers/media/video/plat-anyka/Kconfig"
+
 config MX1_VIDEO
 	bool
 
@@ -1114,6 +1116,14 @@ config VIDEO_OMAP2
 	select VIDEOBUF_DMA_SG
 	---help---
 	  This is a v4l2 driver for the TI OMAP2 camera capture interface
+
+config VIDEO_AK
+	tristate "AK Camera Interface driver"
+	depends on VIDEO_DEV && SOC_CAMERA && AK_ISP_CHAR
+	select VIDEOBUF_DMA_CONTIG
+	---help---
+	  This is a v4l2 driver for the AK Platform Camera Interface. It uses
+	  the ISP2 interface provided by AK_ISP_CHAR.
 
 config VIDEO_MX2_HOSTSUPPORT
 	bool
