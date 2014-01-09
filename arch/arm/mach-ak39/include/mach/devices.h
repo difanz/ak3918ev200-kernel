@@ -24,5 +24,8 @@ extern struct platform_device ak39_gpio_keys_device;
 extern struct platform_device ak39_battery_power;
 extern struct platform_device ak39_rtc_device;
 
+extern struct platform_device ak39_motor0_device;
+extern struct platform_device ak39_motor1_device;
+
 #endif /* endif _MACH_DEVICES_H */
 
