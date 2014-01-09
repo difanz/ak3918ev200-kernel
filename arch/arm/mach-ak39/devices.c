@@ -418,3 +418,15 @@ struct platform_device ak39_gpio_keys_device = {
 };
 EXPORT_SYMBOL(ak39_gpio_keys_device);
 
+/**
+ * @brief:  battery device resource info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+struct platform_device ak39_battery_power = {
+	.name = "battery",
+	.id   = -1,
+};
+EXPORT_SYMBOL(ak39_battery_power);
+
