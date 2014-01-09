@@ -598,6 +598,7 @@ static struct akgpio_keys_platform_data gpio_keys_platform_data = {
 	&anyka_wifi_device,
 	&soc_camera_interface,
 	&ak39_camera_interface,	
+	&ak39_ion_device,
 	&ak39_pcm_device,
 	&ak39_codec_device,
 	&ak39_mmx_device,
