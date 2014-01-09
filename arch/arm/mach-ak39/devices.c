@@ -497,3 +497,30 @@ struct platform_device ak39_motor1_device = {
 };
 EXPORT_SYMBOL(ak39_motor1_device);
 
+/**
+ * @brief:  Crypto device resource info
+ * 
+ * @author: lixinhai
+ * @date: 2014-01-09
+ */
+static struct resource ak39_crypto_resource[] = {
+	[0] = {
+	       .start = 0x20180000,
+	       .end = 0x20180067,
+	       .flags = IORESOURCE_MEM,
+	       },
+	[1] = {
+	       .start = IRQ_ENCRYTION,
+	       .end = IRQ_ENCRYTION,
+	       .flags = IORESOURCE_IRQ,
+	       }
+};
+
+struct platform_device ak39_crypto_device = {
+	.name = "ak-crypto",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(ak39_crypto_resource),
+	.resource = ak39_crypto_resource,
+};
+EXPORT_SYMBOL(ak39_crypto_device);
+
