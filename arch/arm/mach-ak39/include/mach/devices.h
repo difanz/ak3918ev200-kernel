@@ -9,6 +9,8 @@ extern struct platform_device ak39_gpio_uart_device;
 extern struct platform_device ak39_mmc_device;
 extern struct platform_device ak39_sdio_device;
 
+extern struct platform_device ak39_i2c_device;
+
 
 #endif /* endif _MACH_DEVICES_H */
 
