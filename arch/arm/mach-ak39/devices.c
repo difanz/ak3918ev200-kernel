@@ -425,3 +425,27 @@ struct platform_device ak39_rtc_device = {
 };
 EXPORT_SYMBOL(ak39_rtc_device);
 
+/**
+ * @brief: motor0  device resource info
+ * 
+ * @author: lixinhai
+ * @date: 2014-01-09
+ */
+struct platform_device ak39_motor0_device = {
+	.name = "ak-motor",
+	.id = 0,
+};
+EXPORT_SYMBOL(ak39_motor0_device);
+
+/**
+ * @brief:  motor1 device resource info
+ * 
+ * @author: lixinhai
+ * @date: 2014-01-09
+ */
+struct platform_device ak39_motor1_device = {
+	.name = "ak-motor",
+	.id = 1,
+};
+EXPORT_SYMBOL(ak39_motor1_device);
+
