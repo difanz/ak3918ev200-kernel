@@ -25,3 +25,4 @@ obj-$(CONFIG_AK39_PM)       += pm.o
 
 # Machin support
 obj-$(CONFIG_ARCH_AIMER39_AK3916)	+= mach-aimer39_ak3916.o
+obj-$(CONFIG_ARCH_AIMER39_AK3918)	+= mach-aimer39_ak3918.o
