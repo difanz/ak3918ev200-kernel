@@ -358,3 +358,15 @@ struct platform_device ak39_led_pdev = {
 };
 EXPORT_SYMBOL(ak39_led_pdev);
 
+/**
+ * @brief:  gpio buttons device resource info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+struct platform_device ak39_gpio_keys_device = {
+	.name	= "akgpio-keys",
+	.id	= -1,
+};
+EXPORT_SYMBOL(ak39_gpio_keys_device);
+
