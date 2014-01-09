@@ -283,4 +283,32 @@ struct platform_device ak39_mac_device = {
 };
 EXPORT_SYMBOL(ak39_mac_device);
 
+/**
+ * @brief: SPI device info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct resource ak39_spi1_resource[] = {
+	[0] = {
+		.start = 0x20120000,
+		.end = 0x20120027,
+		.flags = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start = IRQ_SPI1,
+		.end = IRQ_SPI1,
+		.flags = IORESOURCE_IRQ,
+	}
+};
+
+struct platform_device ak39_spi1_device = {
+	.name = "ak-spi",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(ak39_spi1_resource),
+	.resource = ak39_spi1_resource,
+};
+EXPORT_SYMBOL(ak39_spi1_device);
+
+
 
