@@ -379,3 +379,15 @@ struct platform_device ak39_pcm_device = {
 EXPORT_SYMBOL(ak39_pcm_device);
 
 
+/**
+ * @brief:  LDE device resource info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+struct platform_device ak39_led_pdev = {
+	.name		= "ak_led",
+	.id		= -1,
+};
+EXPORT_SYMBOL(ak39_led_pdev);
+

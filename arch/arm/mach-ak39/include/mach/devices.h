@@ -19,6 +19,7 @@ extern struct platform_device ak39_spi1_device;
 extern struct platform_device ak39_camera_interface;
 extern struct platform_device ak39_pcm_device;
 
+extern struct platform_device ak39_led_pdev;
 
 #endif /* endif _MACH_DEVICES_H */
 
