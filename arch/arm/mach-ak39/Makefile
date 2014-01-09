@@ -22,3 +22,6 @@ obj-$(CONFIG_AK39_PWM_TIMER)		+= pwm_timer.o
 
 # Power Management support
 obj-$(CONFIG_AK39_PM)       += pm.o
+
+# Machin support
+obj-$(CONFIG_ARCH_AIMER39_AK3916)	+= mach-aimer39_ak3916.o
