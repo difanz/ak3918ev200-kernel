@@ -1,0 +1,3 @@
+# ISP2 sensor framework.  This must follow the stack-B sensor drivers above;
+# i2c_add_driver() can synchronously probe an already registered client.
+obj-$(CONFIG_AK_ISP_CHAR)     += ak_sensor.o ak_sensor_common.o ak_sensor_i2c.o
