@@ -105,3 +105,89 @@ struct platform_device ak39_sdio_device = {
 EXPORT_SYMBOL(ak39_sdio_device);
 
 
+/**
+ * @brief: I2C device info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+#if defined(CONFIG_I2C_AK39_HW)
+struct gpio_info i2c_gpios[] = {
+	{
+		.pin 		= AK_GPIO_27,
+		.pulldown 	= -1,
+		.pullup 	= AK_PULLUP_DISABLE,
+		.dir		= AK_GPIO_DIR_OUTPUT,
+		.value 		= AK_GPIO_OUT_HIGH,
+		.int_pol	= -1,
+	},
+	{
+		.pin 		= AK_GPIO_28,
+		.pulldown 	= -1,
+		.pullup 	= AK_PULLUP_DISABLE,
+		.dir		= AK_GPIO_DIR_OUTPUT,
+		.value 		= AK_GPIO_OUT_HIGH,
+		.int_pol	= -1,
+
+	},
+};
+
+static struct ak39_platform_i2c ak39_default_i2c_data = {
+	.flags		= 0,
+	.bus_num	= 0,
+	.slave_addr	= 0x10,
+	.frequency	= 100*1000,
+	.sda_delay	= 100,
+	.gpios		= i2c_gpios,
+	.npins		= ARRAY_SIZE(i2c_gpios),
+};
+
+static struct resource ak39_i2c_resource[] = {
+	[0] = {
+		.start = 0x20150000,
+		.end   = 0x20150000+SZ_256,
+		.flags = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start = IRQ_I2C,
+		.end   = IRQ_I2C,
+		.flags = IORESOURCE_IRQ,
+	},
+};
+
+struct platform_device ak39_i2c_device = {
+	.name	= "i2c-ak39",
+	.id		= -1,
+	.dev	= {
+		.platform_data = &ak39_default_i2c_data,
+	},
+	.num_resources	= ARRAY_SIZE(ak39_i2c_resource),
+	.resource		= ak39_i2c_resource,
+};
+EXPORT_SYMBOL(ak39_i2c_device);
+
+#elif defined(CONFIG_I2C_GPIO_SOFT)
+struct i2c_gpio_platform_data ak39_i2c_data={
+	.sda_pin = INVALID_GPIO,
+	.scl_pin = INVALID_GPIO,
+	.udelay = 10,
+	.timeout = 200
+};
+
+struct platform_device ak39_i2c_device = {
+	.name	= "i2c-gpio",
+	.id		= -1,
+	.dev	= {
+		.platform_data = &ak39_i2c_data,
+	},
+};
+EXPORT_SYMBOL(ak39_i2c_device);
+#else
+struct platform_device ak39_i2c_device = {
+	.name   = "i2c",
+	.id     = -1,
+};
+EXPORT_SYMBOL(ak39_i2c_device);
+#endif
+
+
