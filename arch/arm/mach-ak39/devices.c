@@ -191,3 +191,36 @@ EXPORT_SYMBOL(ak39_i2c_device);
 #endif
 
 
+/**
+ * @brief: USB udc device info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct resource usb_otg_udc_resource[] = {
+	[0] = {
+		.start	= 0x20200000,
+		.end	= 0x202003ff,
+		.flags	= IORESOURCE_MEM,
+	},
+	[1] = {
+		.name	= "usb mcu irq",
+		.start	= IRQ_USBOTG_MCU,
+		.flags	= IORESOURCE_IRQ,
+	},
+	[2] = {
+		.name	= "usb dma irq",
+		.start	= IRQ_USBOTG_DMA,
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+struct platform_device ak39_usb_udc_device = {
+	.name = "ak-hsudc",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(usb_otg_udc_resource),
+	.resource = usb_otg_udc_resource,
+};
+EXPORT_SYMBOL(ak39_usb_udc_device);
+
+
