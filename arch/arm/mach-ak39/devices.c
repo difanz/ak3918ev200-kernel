@@ -14,6 +14,7 @@
 #include <asm/irq.h>
 #include <asm/gpio.h>
 #include <mach/i2c.h>
+#include <linux/ion.h>
 #include <linux/uio_driver.h>
 #include <linux/akuio_driver.h>
 
@@ -347,6 +348,35 @@ struct platform_device ak39_pcm_device = {
 };
 EXPORT_SYMBOL(ak39_pcm_device);
 
+
+/**
+ * @brief: ION device resource info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct ion_platform_data ak39_ion_pdata = {
+	.nr = 1,
+	.heaps = {
+		{
+			.type = ION_HEAP_TYPE_CARVEOUT,
+			.id = 1,
+			.name = "Reserved phys Memory",
+			.base = CONFIG_RAM_BASE,
+			.size = CONFIG_VIDEO_RESERVED_MEM_SIZE, /* the first reserved size */
+			.align	= PAGE_SIZE,
+		},
+	}
+};
+		
+struct platform_device ak39_ion_device = {
+	.name = "ion-ak",
+	.id = -1,
+	.dev = {
+		.platform_data = &ak39_ion_pdata,
+	},
+};
+EXPORT_SYMBOL(ak39_ion_device);
 
 /**
  * @brief:  LDE device resource info
