@@ -27,5 +27,8 @@ extern struct platform_device ak39_rtc_device;
 
 extern struct platform_device akfha_char_device;
 
+extern struct platform_device ak39_motor0_device;
+extern struct platform_device ak39_motor1_device;
+
 #endif /* endif _MACH_DEVICES_H */
 
