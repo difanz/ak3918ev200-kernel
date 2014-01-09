@@ -223,4 +223,31 @@ struct platform_device ak39_usb_otg_hcd_device = {
 };
 EXPORT_SYMBOL(ak39_usb_otg_hcd_device);
 
+/**
+ * @brief: MAC device info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct resource ak39_mac_resource[] = {
+	[0] = {
+	   .start = 0x20300000,
+	   .end = 0x20301fff,
+	   .flags = IORESOURCE_MEM,
+	},
+	[1] = {
+	   .name = "mac irq",
+	   .start = IRQ_MAC,
+	   .flags = IORESOURCE_IRQ,
+	},
+};
+
+struct platform_device ak39_mac_device = {
+	.name = "ak_ethernet",
+	.id = 0,
+	.num_resources = ARRAY_SIZE(ak39_mac_resource),
+	.resource = ak39_mac_resource,
+};
+EXPORT_SYMBOL(ak39_mac_device);
+
 
