@@ -20,6 +20,7 @@ extern struct platform_device ak39_pcm_device;
 
 extern struct platform_device ak39_led_pdev;
 extern struct platform_device ak39_gpio_keys_device;
+extern struct platform_device ak39_battery_power;
 
 #endif /* endif _MACH_DEVICES_H */
 
