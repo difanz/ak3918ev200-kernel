@@ -8,3 +8,6 @@ obj-y               :=
 obj-m               :=
 obj-n               :=
 obj-                :=
+
+# Core support for all Anyka SoCs
+obj-y			+= clock.o
