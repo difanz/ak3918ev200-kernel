@@ -14,6 +14,8 @@
 #include <asm/irq.h>
 #include <asm/gpio.h>
 #include <mach/i2c.h>
+#include <linux/uio_driver.h>
+#include <linux/akuio_driver.h>
 
 /**
  * @brief: uart0 device info
@@ -429,4 +431,33 @@ struct platform_device ak39_battery_power = {
 	.id   = -1,
 };
 EXPORT_SYMBOL(ak39_battery_power);
+
+static struct resource ak39mmx_resources[] = {
+	{
+		.name   = "video-base",
+		.start	= 0x20020000,
+		.end	= 0x2002042f,
+		.flags	= IORESOURCE_MEM,
+	},
+};
+
+static struct uio_info akmmx_uioinfo = {
+	.name    = "video_codec",
+	.version = "0.1.0",
+#ifdef CONFIG_UIODMA
+	.use_dma = true,
+#endif
+	.irq     = UIO_IRQ_CUSTOM,
+};
+
+struct platform_device ak39_mmx_device = {
+	.name		= "uio_vcodec",
+	.id		= 0,
+	.dev		= {
+		.platform_data = &akmmx_uioinfo,
+	},
+	.num_resources	= ARRAY_SIZE(ak39mmx_resources),
+	.resource	= ak39mmx_resources,
+};
+EXPORT_SYMBOL(ak39_mmx_device);
 
