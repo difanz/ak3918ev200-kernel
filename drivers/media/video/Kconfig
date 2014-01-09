@@ -1057,6 +1057,14 @@ config SOC_CAMERA_OV9740
 	help
 	  This is a ov9740 camera driver
 
+menuconfig LINUX_AKSENSOR
+	tristate "aksensor support"
+	depends on SOC_CAMERA && I2C && !AK_ISP_CORE
+	help
+	  This is the legacy Anyka sensor framework. It cannot coexist with the
+	  ISP2 sensor framework selected by AK_ISP_CORE because both register an
+	  i2c driver named "aksensor".
+
 source "drivers/media/video/plat-anyka/Kconfig"
 
 config MX1_VIDEO
