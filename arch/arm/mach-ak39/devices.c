@@ -461,3 +461,15 @@ struct platform_device ak39_mmx_device = {
 };
 EXPORT_SYMBOL(ak39_mmx_device);
 
+/**
+ * @brief:  rtc device resource info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+struct platform_device ak39_rtc_device = {
+	.name = "ak-rtc",
+	.id = -1,
+};
+EXPORT_SYMBOL(ak39_rtc_device);
+
