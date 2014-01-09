@@ -17,6 +17,7 @@ extern struct platform_device ak39_mac_device;
 extern struct platform_device ak39_spi1_device;
 extern struct platform_device ak39_camera_interface;
 extern struct platform_device ak39_pcm_device;
+extern struct platform_device ak39_mmx_device;
 
 extern struct platform_device ak39_led_pdev;
 extern struct platform_device ak39_gpio_keys_device;
