@@ -754,6 +754,7 @@ static struct platform_device *ak3910_platform_devices[] __initdata = {
 	&anyka_wifi_device,
 	&soc_camera_interface,
 	&ak39_camera_interface,	
+	&ak39_ion_device,
 	&ak39_pcm_device,
 	&ak39_codec_device,
 	&ak39_mmx_device,
