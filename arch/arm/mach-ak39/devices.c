@@ -278,4 +278,33 @@ struct platform_device ak39_spi1_device = {
 EXPORT_SYMBOL(ak39_spi1_device);
 
 
+/**
+ * @brief: Camera interface resource info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct resource ak39_camera_resource[] = {
+	[0] = {
+		.name = "camera if irq",
+		.start = IRQ_CAMERA,
+		.flags = IORESOURCE_IRQ,
+	},
+	[1] = {
+		.start = 0x20000000,
+		.end = 0x20000000 + 0x30,
+		.flags = IORESOURCE_MEM,
+	},
+};
+
+/* camera interface */
+struct platform_device ak39_camera_interface = {
+	.name = "ak_camera",
+	.id   = 39,
+	.num_resources	= ARRAY_SIZE(ak39_camera_resource),	
+	.resource = ak39_camera_resource,	
+};
+
+EXPORT_SYMBOL(ak39_camera_interface);
+
 
