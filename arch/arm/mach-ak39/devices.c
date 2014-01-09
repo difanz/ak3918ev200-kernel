@@ -327,3 +327,22 @@ struct platform_device ak39_camera_interface = {
 EXPORT_SYMBOL(ak39_camera_interface);
 
 
+/**
+ * @brief: PCM device resource info
+ * 
+ * @author: lixinhai
+ * @date: 2014-01-09
+ */
+static u64 snd_dma_mask = DMA_BIT_MASK(32);
+
+struct platform_device ak39_pcm_device = {
+	.name = "snd_akpcm",
+	.id = 0,
+	.dev = {
+		.dma_mask	   = &snd_dma_mask,
+		.coherent_dma_mask = DMA_BIT_MASK(32),
+	},
+};
+EXPORT_SYMBOL(ak39_pcm_device);
+
+
