@@ -21,5 +21,7 @@ extern struct platform_device ak39_pcm_device;
 
 extern struct platform_device ak39_led_pdev;
 
+extern struct platform_device akfha_char_device;
+
 #endif /* endif _MACH_DEVICES_H */
 

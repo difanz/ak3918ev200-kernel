@@ -391,3 +391,18 @@ struct platform_device ak39_led_pdev = {
 };
 EXPORT_SYMBOL(ak39_led_pdev);
 
+/**
+ * @brief:  fha device resource info
+ * 
+ * @author: lixinhai
+ * @date: 2014-01-09
+ */
+struct platform_device akfha_char_device = {
+	.name = "ak-fhachar",
+	.id = -1,
+	.dev = {
+		.platform_data = NULL,
+	},
+};
+EXPORT_SYMBOL(akfha_char_device);
+
