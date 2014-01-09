@@ -11,3 +11,13 @@ config CPU_AK3916
 	bool
 config CPU_AK3918
 	bool
+
+# aisc cpufreq set
+config ASIC_FREQ_VALUE
+	int "Config asic frequency(if asic>100MHz asic=vclk; else asic=vclk/2)"
+	range 45000000 120000000
+	default 90000000
+	depends on ARCH_AK39
+	help
+	  config ak39xx asic frequency when the kernel uncompress.
+	  note: vclk be equal to even asic.
