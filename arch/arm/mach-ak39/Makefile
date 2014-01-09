@@ -27,3 +27,4 @@ obj-$(CONFIG_AK39_PM)       += pm.o
 obj-$(CONFIG_ARCH_SDK3910)	+= mach-sdk3910.o
 obj-$(CONFIG_ARCH_AIMER39_AK3916)	+= mach-aimer39_ak3916.o
 obj-$(CONFIG_ARCH_AIMER39_AK3918)	+= mach-aimer39_ak3918.o
+obj-$(CONFIG_ARCH_CLOUD39EV2_AK3918E80PIN_MNBD)	+= mach-cloud39ev2_ak3918e80pin_mnbd.o
