@@ -52,3 +52,56 @@ struct platform_device ak39_gpio_uart_device = {
 EXPORT_SYMBOL(ak39_gpio_uart_device);
 
 
+/**
+ * @brief: MCI device info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct resource ak39_mmc_resource[] = {
+	[0] = {
+		.start = 0x20100000,
+		.end = 0x20100000 + 0x43,
+		.flags = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start = IRQ_MCI,
+		.flags = IORESOURCE_IRQ,
+	},
+};
+
+struct platform_device ak39_mmc_device = {
+	.name = "ak_mci",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(ak39_mmc_resource),
+	.resource = ak39_mmc_resource,
+};
+EXPORT_SYMBOL(ak39_mmc_device);
+
+/**
+ * @brief: SDIO device info
+ * 
+ * @author: caolianming
+ * @date: 2014-01-09
+ */
+static struct resource ak39_sdio_resource[] = {
+	[0] = {
+		.start = 0x20108000,
+		.end = 0x20108000 + 0x43,
+		.flags = IORESOURCE_MEM,
+	},
+	[1] = {
+		.start = IRQ_SDIO,
+		.flags = IORESOURCE_IRQ,
+	},
+};
+
+struct platform_device ak39_sdio_device = {
+	.name = "ak_sdio",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(ak39_sdio_resource),
+	.resource = ak39_sdio_resource,
+};
+EXPORT_SYMBOL(ak39_sdio_device);
+
+
