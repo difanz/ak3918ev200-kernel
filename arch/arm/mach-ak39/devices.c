@@ -284,23 +284,42 @@ EXPORT_SYMBOL(ak39_spi1_device);
  * @author: caolianming
  * @date: 2014-01-09
  */
+/*
+ * IRQ only. The MEM resource that used to be here covered 0x20000000-0x30,
+ * inside the ISP register block the character device claims
+ * (0x20000000-0x4c). ak_camera never used it - platform_get_irq is its only
+ * resource lookup and pcdev->res is commented out - but platform_device_add()
+ * registered it in iomem_resource anyway, so request_mem_region() in
+ * akisp_open() failed with -EBUSY and open("/dev/isp_char") returned -1. The
+ * ISP then never initialised, and the first VO call out of ak_camera_set_fmt()
+ * dereferenced a NULL context when /dev/video0 was opened.
+ */
 static struct resource ak39_camera_resource[] = {
 	[0] = {
 		.name = "camera if irq",
 		.start = IRQ_CAMERA,
 		.flags = IORESOURCE_IRQ,
 	},
-	[1] = {
-		.start = 0x20000000,
-		.end = 0x20000000 + 0x30,
-		.flags = IORESOURCE_MEM,
-	},
 };
+
+/*
+ * videobuf-dma-contig allocates the capture buffers with dma_alloc_coherent(),
+ * which returns NULL for a device with no coherent mask - the kernel says so
+ * outright: "ak_camera ak_camera.39: coherent DMA mask is unset". VIDIOC_REQBUFS
+ * still succeeds, because videobuf defers the allocation, so the failure only
+ * surfaces as ENOMEM from the mmap that follows. The sound device below has
+ * carried a mask all along.
+ */
+static u64 ak39_camera_dma_mask = DMA_BIT_MASK(32);
 
 /* camera interface */
 struct platform_device ak39_camera_interface = {
 	.name = "ak_camera",
 	.id   = 39,
+	.dev = {
+		.dma_mask	   = &ak39_camera_dma_mask,
+		.coherent_dma_mask = DMA_BIT_MASK(32),
+	},
 	.num_resources	= ARRAY_SIZE(ak39_camera_resource),	
 	.resource = ak39_camera_resource,	
 };
