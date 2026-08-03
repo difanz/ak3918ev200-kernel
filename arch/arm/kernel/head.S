@@ -300,6 +300,24 @@ __create_page_tables:
 	cmp	r0, r6
 	blo	1b
 
+#ifdef CONFIG_DEBUG_AK39_UART0
+	/*
+	 * The AK39xx UART transmits from an L2 buffer 638 MiB above its
+	 * registers, outside the 512 MiB run mapped above.  Map that section
+	 * too, keeping the same virtual/physical gap the debug macros assume.
+	 */
+	ldr	r3, =0x48000000				@ L2 buffer, physical
+	ldr	r0, =0xf8000000				@ L2 buffer, virtual
+	mov	r0, r0, lsr #SECTION_SHIFT
+	mov	r0, r0, lsl #PMD_ORDER
+	add	r0, r4, r0
+	mov	r3, r3, lsr #SECTION_SHIFT
+	ldr	r7, [r10, #PROCINFO_IO_MMUFLAGS]
+	orr	r3, r7, r3, lsl #SECTION_SHIFT
+	orr	r3, r3, #PMD_SECT_XN
+	str	r3, [r0]
+#endif
+
 #else /* CONFIG_DEBUG_ICEDCC || CONFIG_DEBUG_SEMIHOSTING */
 	/* we don't need any serial debugging mappings */
 	ldr	r7, [r10, #PROCINFO_IO_MMUFLAGS] @ io_mmuflags
