@@ -1292,6 +1292,15 @@ static struct flash_info __devinitdata ak_spiflash_supportlist [] = {
 	{ "w25q64", 0xef4017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2|SFLAG_DUAL_READ|SFLAG_QUAD_READ|SFLAG_QUAD_WRITE, },
 	{ "w25q128", 0xef4018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2|SFLAG_DUAL_READ|SFLAG_QUAD_READ|SFLAG_QUAD_WRITE, },
 
+	/* XMC -- xm25qh "blocks" are 64K, "sectors" are 4KiB.  Behaves as a
+	 * standard SPI NOR part; the capability set is the same as gd25q64.
+	 * Geometry and flags taken from the entry in this camera's own stock
+	 * kernel, which identifies the fitted chip as "XM25QH64C" and encodes
+	 * flags 0x18f8.  Confirmed by u-boot's spi-nor-ids.c, which lists
+	 * 0x204017 as an 8 MiB, 4 KiB-sector part.
+	 */
+	{ "xm25qh64c", 0x204017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+
 	/* GigaDevice -- w25x "blocks" are 64K, "sectors" are 4KiB */
 	{ "gd25q64", 0xc84017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2|SFLAG_DUAL_READ|SFLAG_QUAD_READ|SFLAG_DUAL_IO_READ|SFLAG_QUAD_IO_READ|SFLAG_QUAD_WRITE , },
 	{ "gd25q128", 0xc84018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2|SFLAG_DUAL_READ|SFLAG_QUAD_READ|SFLAG_DUAL_IO_READ|SFLAG_QUAD_IO_READ|SFLAG_QUAD_WRITE ,},
