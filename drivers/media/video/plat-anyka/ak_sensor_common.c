@@ -6,7 +6,17 @@
 
 int ak_sensor_read_register(struct ak_sensor_i2c_data *p_i2c_data)
 {
-	return sensor_read_register((T_SENSOR_I2C_DATA_S *)p_i2c_data);
+	int ret;
+
+	ret = sensor_read_register((T_SENSOR_I2C_DATA_S *)p_i2c_data);
+	/*
+	 * sensor_read_register returns the datum as s32 (negative on error).
+	 * Stash into u32Data for callers that read the struct field; the
+	 * return value remains authoritative.
+	 */
+	if (ret >= 0)
+		p_i2c_data->u32Data = (unsigned int)ret;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(ak_sensor_read_register);
 
@@ -42,7 +52,7 @@ int ak_sensor_set_pin_level(const int pin, const int level)
 	unsigned int tmp;
 
 	tmp = (unsigned int)pin;
-	return ak_gpio_setpin(tmp, level ? 1 : 0);    
+	return ak_gpio_setpin(tmp, level ? 1 : 0);
 }
 EXPORT_SYMBOL_GPL(ak_sensor_set_pin_level);
 
