@@ -12,6 +12,15 @@ config CPU_AK3916
 config CPU_AK3918
 	bool
 
+# AK3918EV200 is a later member of the AK3918 family.  This SDK targets its
+# siblings, and several parts of the chip are laid out differently on EV200:
+# the GPIO register file has three banks rather than two, there is a fourth
+# share-pin register, and the pad mux assignments themselves differ.  Select
+# this alongside CPU_AK3918 on boards that carry an EV200.
+config CPU_AK3918EV200
+	bool
+	depends on CPU_AK3918
+
 # aisc cpufreq set
 config ASIC_FREQ_VALUE
 	int "Config asic frequency(if asic>100MHz asic=vclk; else asic=vclk/2)"
