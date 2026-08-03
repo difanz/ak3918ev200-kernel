@@ -68,3 +68,15 @@ config AK_ISP_CORE
 
 	  If unsure, say N.
 
+config SENSOR_GC1084
+	bool "GalaxyCore GC1084 sensor support (DVP)"
+	depends on AK_ISP_CHAR
+	help
+	  GC1084 on a DVP bus, 1280x720 at 30fps. Unlike the sensors above this
+	  one uses the ak_sensor/ispdrv framework, so it needs AK_ISP_CHAR and an
+	  ISP core. It is built in so it registers before the built-in aksensor I2C
+	  driver probes the board client. The initialisation script is not in the
+	  driver: the ISP reads it from the tuning blob and passes it to the init
+	  callback.
+
+	  If unsure, say N.
