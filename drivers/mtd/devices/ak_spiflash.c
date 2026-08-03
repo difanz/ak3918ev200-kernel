@@ -1451,6 +1451,215 @@ static struct flash_info __devinitdata ak_spiflash_supportlist [] = {
 	{ "w25q128jw", 0xef8018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
 };
 
+/*
+ * Anyka on-flash partition table.
+ *
+ * The vendor's libfha.a can locate this table, but the copy shipped with this
+ * SDK release (V1.0.25) computes the wrong start page on this board: it lands
+ * on erased flash and reports a nonsense entry count.  No newer library is
+ * available to us, and it is a closed blob, so parse the format directly
+ * instead.  It is documented and simple, and this keeps the boot path free of
+ * a binary we cannot fix.
+ *
+ * Layout of the on-flash partition table:
+ *
+ *   - the SPI boot header begins with "SPIP" somewhere in the first pages;
+ *   - the byte at magic + 31 is the table's index in erase blocks;
+ *   - the table is a u32 entry count followed by 32-byte records:
+ *       +0  type, +1 flags, +2 name (6 bytes), +8 size in KiB, +12 start
+ *   - a second copy follows one erase block later.
+ *
+ * Nothing here is board-specific: no offset, size or name is
+ * hardcoded.  The geometry lives in the image, which is where it belongs.
+ */
+#define AK_PART_MAGIC		"SPIP"
+#define AK_PART_MAGIC_LEN	4
+#define AK_PART_HDR_SCAN	(3 * FLASH_PAGESIZE)
+#define AK_PART_TBL_BLK_OFF	31
+#define AK_PART_TBL_SIZE	512
+#define AK_PART_ENTRY_SIZE	32
+#define AK_PART_NAME_OFF	2
+#define AK_PART_NAME_LEN	6
+#define AK_PART_SIZE_OFF	8
+#define AK_PART_START_OFF	12
+#define AK_PART_MAX		15
+
+/*
+ * Read one page at a time.  This runs during probe, before anything else has
+ * exercised the controller, and it is the access shape the vendor code used
+ * here; multi-page reads at this point are not worth the risk.
+ */
+static int ak_flash_read(struct mtd_info *mtd, loff_t from, size_t len, void *buf)
+{
+	unsigned char *out = buf;
+
+	while (len) {
+		size_t chunk = len > FLASH_PAGESIZE ? FLASH_PAGESIZE : len;
+		size_t retlen = 0;
+		int ret;
+
+		ret = mtd_read(mtd, from, chunk, &retlen, out);
+		if (ret < 0)
+			return ret;
+		if (retlen != chunk)
+			return -EIO;
+
+		from += chunk;
+		out += chunk;
+		len -= chunk;
+	}
+
+	return 0;
+}
+
+/* Returns the number of entries parsed, or a negative error. */
+static int ak_parse_part_table(struct mtd_info *mtd, const unsigned char *tbl,
+			       struct mtd_partition *parts, char *names)
+{
+	uint64_t chip = mtd->size;
+	unsigned long nr;
+	int i, j;
+
+	nr = le32_to_cpup((__le32 *)tbl);
+	if (nr < 1 || nr > AK_PART_MAX) {
+		printk("ak-spiflash: partition count %lu out of range\n", nr);
+		return -EINVAL;
+	}
+	if (4 + nr * AK_PART_ENTRY_SIZE > AK_PART_TBL_SIZE) {
+		printk("ak-spiflash: partition table overruns its sector\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < nr; i++) {
+		const unsigned char *rec = tbl + 4 + i * AK_PART_ENTRY_SIZE;
+		char *name = names + i * (AK_PART_NAME_LEN + 1);
+		uint64_t off, size;
+
+		size = (uint64_t)le32_to_cpup((__le32 *)(rec + AK_PART_SIZE_OFF)) << 10;
+		off  = le32_to_cpup((__le32 *)(rec + AK_PART_START_OFF));
+
+		memcpy(name, rec + AK_PART_NAME_OFF, AK_PART_NAME_LEN);
+		name[AK_PART_NAME_LEN] = '\0';
+		if (!name[0]) {
+			printk("ak-spiflash: partition %d has no name\n", i);
+			return -EINVAL;
+		}
+
+		if (!size || off >= chip || size > chip || off + size > chip) {
+			printk("ak-spiflash: partition %d (%s) at 0x%llx+0x%llx "
+			       "does not fit a 0x%llx flash\n",
+			       i, name, off, size, chip);
+			return -EINVAL;
+		}
+		if (mtd->erasesize && ((off | size) & (mtd->erasesize - 1))) {
+			printk("ak-spiflash: partition %d (%s) is not erase "
+			       "block aligned\n", i, name);
+			return -EINVAL;
+		}
+		for (j = 0; j < i; j++) {
+			if (off < parts[j].offset + parts[j].size &&
+			    parts[j].offset < off + size) {
+				printk("ak-spiflash: partition %d (%s) overlaps "
+				       "%s\n", i, name, parts[j].name);
+				return -EINVAL;
+			}
+		}
+
+		parts[i].name = name;
+		parts[i].offset = off;
+		parts[i].size = size;
+		parts[i].mask_flags = 0;
+	}
+
+	return nr;
+}
+
+static int ak_mount_partitions(struct spi_device *spi)
+{
+	struct mtd_info *mtd = ak_mtd_info;
+	struct mtd_part_parser_data ppdata;
+	struct mtd_partition *parts = NULL;
+	unsigned char *hdr = NULL, *tbl = NULL;
+	char *names = NULL;
+	loff_t tbl_off;
+	int nr, i, ret;
+
+	hdr = kzalloc(AK_PART_HDR_SCAN, GFP_KERNEL);
+	tbl = kzalloc(AK_PART_TBL_SIZE, GFP_KERNEL);
+	parts = kzalloc(sizeof(*parts) * AK_PART_MAX, GFP_KERNEL);
+	names = kzalloc(AK_PART_MAX * (AK_PART_NAME_LEN + 1), GFP_KERNEL);
+	if (!hdr || !tbl || !parts || !names) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = ak_flash_read(mtd, 0, AK_PART_HDR_SCAN, hdr);
+	if (ret) {
+		printk("ak-spiflash: cannot read the boot header\n");
+		goto out;
+	}
+
+	ret = -EINVAL;
+	for (i = 0; i + AK_PART_MAGIC_LEN <= AK_PART_HDR_SCAN; i++) {
+		if (memcmp(hdr + i, AK_PART_MAGIC, AK_PART_MAGIC_LEN))
+			continue;
+		if (i + AK_PART_TBL_BLK_OFF >= AK_PART_HDR_SCAN)
+			break;
+		ret = 0;
+		break;
+	}
+	if (ret) {
+		printk("ak-spiflash: no " AK_PART_MAGIC " boot header in the first "
+		       "%d bytes; they begin %02x %02x %02x %02x %02x %02x %02x %02x\n",
+		       AK_PART_HDR_SCAN, hdr[0], hdr[1], hdr[2], hdr[3],
+		       hdr[4], hdr[5], hdr[6], hdr[7]);
+		goto out;
+	}
+
+	tbl_off = (loff_t)hdr[i + AK_PART_TBL_BLK_OFF] * mtd->erasesize;
+	printk("ak-spiflash: partition table at 0x%llx\n", tbl_off);
+
+	/* The table is written twice, one erase block apart. */
+	nr = -EINVAL;
+	for (i = 0; i < 2; i++) {
+		loff_t at = tbl_off + (loff_t)i * mtd->erasesize;
+
+		if (at + AK_PART_TBL_SIZE > mtd->size)
+			break;
+		if (ak_flash_read(mtd, at, AK_PART_TBL_SIZE, tbl))
+			continue;
+		nr = ak_parse_part_table(mtd, tbl, parts, names);
+		if (nr > 0)
+			break;
+		printk("ak-spiflash: partition table at 0x%llx is unusable\n", at);
+	}
+	if (nr <= 0) {
+		ret = nr < 0 ? nr : -EINVAL;
+		goto out;
+	}
+
+	for (i = 0; i < nr; i++)
+		printk("ak-spiflash: %-6s 0x%08llx + 0x%08llx\n",
+		       parts[i].name, parts[i].offset, parts[i].size);
+
+	memset(&ppdata, 0, sizeof(ppdata));
+	ppdata.of_node = spi->dev.of_node;
+	ret = mtd_device_parse_register(mtd, NULL, &ppdata, parts, nr);
+	if (ret)
+		printk("ak-spiflash: adding MTD partitions failed\n");
+
+out:
+	/*
+	 * add_mtd_partitions() kstrdup()s each name and copies the descriptors,
+	 * so none of this has to outlive the call.
+	 */
+	kfree(names);
+	kfree(parts);
+	kfree(tbl);
+	kfree(hdr);
+	return ret;
+}
+
 /**
 * @brief	 jedec probe
 * 
@@ -1680,6 +1889,9 @@ static int __devinit ak_spiflash_probe(struct spi_device *spi)
 		kfree(flash);
 		return -EINVAL;
 	}
+	ret = ak_mount_partitions(spi);
+	if (ret)
+		printk("Add MTD partitions failed\n");
 
     printk("Init AK SPI Flash finish.\n"); 
 
