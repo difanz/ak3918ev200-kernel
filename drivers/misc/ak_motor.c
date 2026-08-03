@@ -651,7 +651,20 @@ static int __devinit ak_motor_probe(struct platform_device *pdev)
 
 	sprintf(name, "%s%d", pdev->name, pdev->id);
 
+	/*
+	 * The ioctl takes 1..16 and this board's data says 200 and 100, which
+	 * come out of get_delay_by_speed() as a 1 ms step period - far faster
+	 * than the geared steppers can follow, so they buzz in place instead of
+	 * turning, and a blind self-check sits on the end stop doing it. Board
+	 * data cannot ask for something userspace is not allowed to.
+	 */
 	motor->angular_speed = pdata->angular_speed;
+	if (motor->angular_speed < AK_MOTOR_MIN_SPEED ||
+	    motor->angular_speed > AK_MOTOR_MAX_SPEED) {
+		dev_warn(&pdev->dev, "angular speed %u is out of range, using %d\n",
+			 motor->angular_speed, AK_MOTOR_MAX_SPEED);
+		motor->angular_speed = AK_MOTOR_MAX_SPEED;
+	}
 	motor->delay = get_delay_by_speed(motor->angular_speed);
 	motor->miscdev.minor = MISC_DYNAMIC_MINOR;
 	motor->miscdev.name =  name;
