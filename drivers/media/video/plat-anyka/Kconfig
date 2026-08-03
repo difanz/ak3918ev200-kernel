@@ -52,3 +52,19 @@ config SENSOR_NT99141
 	help
 	  This is a nt99141 sensor driver
 
+config AK_ISP_CORE
+	bool "Anyka ISP core, built from source"
+	depends on ARCH_AK39
+	help
+	  The ak_isp_* implementation behind /dev/isp_char. Anyka ships this as
+	  a prebuilt libispdrv.a per SoC; this builds it from the SDK sources
+	  instead, adapted for this part.
+
+	  The EV200 register-block sizes, word indices, SDB upload-enable bits in
+	  REG5[32] and isp_working_mode numbering are applied and checked against
+	  this unit's stock kernel. The port is still not finished: the 3A edits
+	  are unapplied, the LUT blocks are unverified, and none of it has run on
+	  hardware.
+
+	  If unsure, say N.
+
