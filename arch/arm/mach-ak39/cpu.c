@@ -81,7 +81,47 @@ static const unsigned long akcpu_known_ids[] __initconst = {
 	.type	 = MT_DEVICE						\
 }
 
+#ifdef CONFIG_DEBUG_AK39_UART0
+/*
+ * Keep the low-level debug windows alive past paging_init.  The virtual gap
+ * between them must stay 0x27ed1000, which is what mach/debug-macro.S adds to
+ * the UART base to reach the L2 transmit buffer.
+ */
+#define AK39_DEBUG_UART_VA	0xd0130000
+#define AK39_DEBUG_L2CTRL_VA	0xd0140000	/* UART_VA + AK39_DEBUG_L2CTRL_GAP */
+#define AK39_DEBUG_L2_VA	0xf8001000
+#endif
+
 static struct map_desc ak39_iodesc[] __initdata = {
+#ifdef CONFIG_DEBUG_AK39_UART0
+	{
+		.virtual = AK39_DEBUG_UART_VA,
+		.pfn	 = __phys_to_pfn(0x20130000),
+		.length	 = SZ_4K,
+		.type	 = MT_DEVICE,
+	},
+	{
+		/*
+		 * senduart clears the UART TX buffer through the L2 controller,
+		 * 64 KiB above the UART registers.  head.S maps a 1 MiB section
+		 * that happens to cover it, but devicemaps_init() clears every
+		 * pmd from VMALLOC_START before calling map_io() and flushes the
+		 * TLB straight after, so without this entry the console dies on
+		 * the first character emitted after that flush - and the fault
+		 * handler's own printk re-enters printascii and faults again.
+		 */
+		.virtual = AK39_DEBUG_L2CTRL_VA,
+		.pfn	 = __phys_to_pfn(0x20140000),
+		.length	 = SZ_4K,
+		.type	 = MT_DEVICE,
+	},
+	{
+		.virtual = AK39_DEBUG_L2_VA,
+		.pfn	 = __phys_to_pfn(0x48001000),
+		.length	 = SZ_4K,
+		.type	 = MT_DEVICE,
+	},
+#endif
 	IODESC_ENT(SYSCTRL),
 	IODESC_ENT(CAMERA),
 	IODESC_ENT(VENCODE),
