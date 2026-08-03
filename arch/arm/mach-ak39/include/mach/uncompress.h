@@ -89,7 +89,7 @@
 #if defined CONFIG_UART0_INIT
 #define UART_TXBUF_CLR_BIT      UART0_TXBUF_CLR_BIT
 /* Was (1 << UART0_RXD) twice, so TXD was never muxed. */
-#define SRDPIN_UART_RXTX_BIT    ((1 << UART0_RXD)|(1 << UART0_RXD))
+#define SRDPIN_UART_RXTX_BIT    ((1 << UART0_RXD)|(1 << UART0_TXD))
 #define RXD_PU_BIT              RXD0_PU_BIT
 #define TXD_PU_BIT              TXD0_PU_BIT
 #define UART_CLKEN_BIT			UART0_CLKEN_BIT
