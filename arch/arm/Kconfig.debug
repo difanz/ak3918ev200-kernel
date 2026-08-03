@@ -308,6 +308,18 @@ choice
 		  For more details about semihosting, please see
 		  chapter 8 of DUI0203I_rvct_developer_guide.pdf from ARM Ltd.
 
+config DEBUG_AK39_UART0
+	bool "Kernel low-level debugging via AK39xx UART0"
+	depends on ARCH_AK39
+	help
+	  Say Y here if you want kernel low-level debugging support on the
+	  AK39xx UART0, using the same L2-buffer transmit sequence the
+	  decompressor already uses on this SoC.
+
+	  This maps the UART registers and the UART's L2 transmit buffer at
+	  fixed virtual addresses.  It is for bring-up only; a release kernel
+	  should leave DEBUG_LL off.
+
 endchoice
 
 config EARLY_PRINTK
