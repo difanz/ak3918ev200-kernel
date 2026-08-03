@@ -126,11 +126,82 @@
 #define AK_GPIO_62			AK_GPIO_GROUP2_NO(30)
 #define AK_GPIO_63			AK_GPIO_GROUP2_NO(31)
 
+#ifdef CONFIG_CPU_AK3918EV200
+/*
+ * A third bank, pads 64..78.  AK_GPIO_MAX deliberately stays at 63: nothing on
+ * this board uses a pad above 58, and raising it would change NR_IRQS.  These
+ * names exist so pupd_cfg_info[] can describe the whole part.
+ */
+#define AK_GPIO_GROUP3		(32*2)
+#define AK_GPIO_GROUP3_NO(offset)		( AK_GPIO_GROUP3 + (offset))
+
+#define AK_GPIO_64			AK_GPIO_GROUP3_NO(0)
+#define AK_GPIO_65			AK_GPIO_GROUP3_NO(1)
+#define AK_GPIO_66			AK_GPIO_GROUP3_NO(2)
+#define AK_GPIO_67			AK_GPIO_GROUP3_NO(3)
+#define AK_GPIO_68			AK_GPIO_GROUP3_NO(4)
+#define AK_GPIO_69			AK_GPIO_GROUP3_NO(5)
+#define AK_GPIO_70			AK_GPIO_GROUP3_NO(6)
+#define AK_GPIO_71			AK_GPIO_GROUP3_NO(7)
+#define AK_GPIO_72			AK_GPIO_GROUP3_NO(8)
+#define AK_GPIO_73			AK_GPIO_GROUP3_NO(9)
+#define AK_GPIO_74			AK_GPIO_GROUP3_NO(10)
+#define AK_GPIO_75			AK_GPIO_GROUP3_NO(11)
+#define AK_GPIO_76			AK_GPIO_GROUP3_NO(12)
+#define AK_GPIO_77			AK_GPIO_GROUP3_NO(13)
+#define AK_GPIO_78			AK_GPIO_GROUP3_NO(14)
+#endif	/* CONFIG_CPU_AK3918EV200 */
+
 #define AK_GPIO_MIN				AK_GPIO_0
 #define AK_GPIO_MAX				AK_GPIO_63
 #define GPIO_UPLIMIT			AK_GPIO_MAX
 
 /******************  access gpio register addr **********************/
+/*
+ * The GPIO register file holds one register per bank of 32 pins, grouped by
+ * function, so the number of banks sets the stride between groups.
+ *
+ * AK3918EV200 has three banks: each group is 12 bytes wide and every group
+ * after DIR sits at a different offset than on the two-bank parts.  Getting
+ * this wrong is quiet rather than loud - INT_MASK lands on the read-only
+ * INPUT registers, so masking a GPIO interrupt has no effect at all.
+ *
+ * Only 64 pins are exposed as interrupts either way, which is what NR_IRQS
+ * of 95 accounts for; the third bank's registers are defined for
+ * completeness.
+ */
+#ifdef CONFIG_CPU_AK3918EV200
+
+#define AK_GPIO_DIR1			(AK_VA_GPIO + 0x00)
+#define AK_GPIO_DIR2			(AK_VA_GPIO + 0x04)
+#define AK_GPIO_DIR3			(AK_VA_GPIO + 0x08)
+
+#define AK_GPIO_OUT1			(AK_VA_GPIO + 0x0C)
+#define AK_GPIO_OUT2			(AK_VA_GPIO + 0x10)
+#define AK_GPIO_OUT3			(AK_VA_GPIO + 0x14)
+
+#define AK_GPIO_INPUT1         	(AK_VA_GPIO + 0x18)
+#define AK_GPIO_INPUT2         	(AK_VA_GPIO + 0x1C)
+#define AK_GPIO_INPUT3         	(AK_VA_GPIO + 0x20)
+
+#define AK_GPIO_INT_MASK1      	(AK_VA_GPIO + 0x24)
+#define AK_GPIO_INT_MASK2      	(AK_VA_GPIO + 0x28)
+#define AK_GPIO_INT_MASK3      	(AK_VA_GPIO + 0x2C)
+
+#define AK_GPIO_INT_MODE1      	(AK_VA_GPIO + 0x30)
+#define AK_GPIO_INT_MODE2      	(AK_VA_GPIO + 0x34)
+#define AK_GPIO_INT_MODE3      	(AK_VA_GPIO + 0x38)
+
+#define AK_GPIO_INTP1         	(AK_VA_GPIO + 0x3C)
+#define AK_GPIO_INTP2          	(AK_VA_GPIO + 0x40)
+#define AK_GPIO_INTP3          	(AK_VA_GPIO + 0x44)
+
+#define AK_GPIO_EDGE_STATUS1	(AK_VA_GPIO + 0x48)
+#define AK_GPIO_EDGE_STATUS2	(AK_VA_GPIO + 0x4C)
+#define AK_GPIO_EDGE_STATUS3	(AK_VA_GPIO + 0x50)
+
+#else	/* two-bank parts */
+
 #define AK_GPIO_DIR1			(AK_VA_GPIO + 0x00)
 #define AK_GPIO_DIR2			(AK_VA_GPIO + 0x04)
 
@@ -152,13 +223,29 @@
 #define AK_GPIO_EDGE_STATUS1	(AK_VA_GPIO + 0x30)
 #define AK_GPIO_EDGE_STATUS2	(AK_VA_GPIO + 0x34)
 
+#endif	/* CONFIG_CPU_AK3918EV200 */
+
 #define AK_PPU_PPD1           	(AK_VA_SYSCTRL + 0x80)
 #define AK_PPU_PPD2           	(AK_VA_SYSCTRL + 0x84)
 #define AK_PPU_PPD3           	(AK_VA_SYSCTRL + 0x88)
+#ifdef CONFIG_CPU_AK3918EV200
+/*
+ * A fourth pull register, out of line with the other three like CON4.  It
+ * carries the pulls for pads 25..46.
+ */
+#define AK_PPU_PPD4           	(AK_VA_SYSCTRL + 0xE0)
+#endif
 
 #define AK_SHAREPIN_CON1		(AK_VA_SYSCTRL + 0x74)
 #define AK_SHAREPIN_CON2		(AK_VA_SYSCTRL + 0x78)
 #define AK_SHAREPIN_CON3		(AK_VA_SYSCTRL + 0x7C)
+#ifdef CONFIG_CPU_AK3918EV200
+/*
+ * AK3918EV200 has a fourth share-pin register, out of line with the other
+ * three.  It carries the mux for pads 25..46.
+ */
+#define AK_SHAREPIN_CON4		(AK_VA_SYSCTRL + 0xDC)
+#endif
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define AK_GPIO_DIR_BASE(pin)			(((pin)>>5)*4 + AK_GPIO_DIR1)
@@ -209,6 +296,9 @@ typedef enum {
 	 ePIN_AS_SPI1,				 // share pin as SPI1
 	 ePIN_AS_SPI2,				 // share pin as SPI2
 	 ePIN_AS_MAC,				 // share pin as Ethernet MAC
+#ifdef CONFIG_CPU_AK3918EV200
+	 ePIN_AS_RMAC,				 // share pin as Ethernet MAC, RMII
+#endif
 	 ePIN_AS_I2C,				 // share pin as I2C
  	 ePIN_AS_IRDA,				 // share png as IrDA
 	 ePIN_AS_RAM,				 // share pin as RAM Controller
@@ -221,6 +311,24 @@ typedef enum {
 	SHARE_CONFG2
 } T_SHARE_CONFG;
 
+#ifdef CONFIG_CPU_AK3918EV200
+
+typedef enum  {
+	SHARE_CFG1 = 0,   // share cfg1
+	SHARE_CFG2,       // share cfg2
+	SHARE_CFG3,       // share cfg3
+	SHARE_CFG4,       // share cfg4
+	SHARE_CFG12,	  // share cfg1 and share cfg2 as used
+	SHARE_CFG13,	  // share cfg1 and share cfg3 as used
+	SHARE_CFG14,	  // share cfg1 and share cfg4 as used
+	SHARE_CFG23,	  // share cfg2 and share cfg3 as used
+	SHARE_CFG123,	  // share cfg1, share cfg2 and cfg3 as used
+	SHARE_CFG134,	  // share cfg1, share cfg3 and cfg4 as used
+	EXIT_CFG
+}T_SHARE_CFG;
+
+#else	/* two-bank parts */
+
 typedef enum  {
 	SHARE_CFG1 = 0,   // share cfg1
 	SHARE_CFG2,       // share cfg2
@@ -232,6 +340,8 @@ typedef enum  {
 	EXIT_CFG
 }T_SHARE_CFG;
 
+#endif	/* CONFIG_CPU_AK3918EV200 */
+
 struct gpio_sharepin_cfg {
     T_GPIO_SHAREPIN_CFG func_module;
 	T_SHARE_CFG share_config;
@@ -241,6 +351,10 @@ struct gpio_sharepin_cfg {
     unsigned long reg2_bit_value;
     unsigned long reg3_bit_mask;
     unsigned long reg3_bit_value;
+#ifdef CONFIG_CPU_AK3918EV200
+    unsigned long reg4_bit_mask;
+    unsigned long reg4_bit_value;
+#endif
 };
 
 typedef enum {
@@ -254,6 +368,9 @@ typedef enum  {
 	PUPD_CFG1 = 0,   // share cfg1
 	PUPD_CFG2,       // share cfg2
 	PUPD_CFG3,       // share cfg2
+#ifdef CONFIG_CPU_AK3918EV200
+	PUPD_CFG4,       // share cfg4
+#endif
 }T_PUPD_CFG;
 
 /*
@@ -261,10 +378,16 @@ typedef enum  {
  *
  *   BIT1     one-bit field:  reg &= ~(1 << index)
  *   BIT2     two-bit field:  reg &= ~(3 << index)
+ *   BIT2_01  two-bit field whose GPIO encoding is 0b01, not 0b00:
+ *            reg &= ~(3 << index); reg |= (1 << index)
+ *
+ * BIT2_01 is unused on the two-bank parts; AK3918EV200 needs it for the CON2
+ * pads (6..9).
  */
 typedef enum  {
 	AS_GPIO_CFG_BIT1 = 0,   // share cfg1
 	AS_GPIO_CFG_BIT2,       // share cfg2
+	AS_GPIO_CFG_BIT2_01,    // two-bit field, GPIO encoding 0b01
 }T_AS_GPIO_CFG;
 
 struct gpio_pupd_cfg {
