@@ -10,6 +10,44 @@
 #include <asm/irq.h>
 #include <mach/gpio.h>
 
+#ifdef CONFIG_CPU_AK3918EV200
+
+/*
+ * Peripheral pad mux for AK3918EV200, recovered from this unit's stock kernel.
+ * The four mask/value pairs are SHAREPIN_CON1..CON4.
+ *
+ * Every module assignment differs from the two-bank parts, and the registers
+ * differ too: SD/MMC lives in CON4 here, not CON3.  ePIN_AS_UART1 is the UART0
+ * console pair, CON1[2:1], which this sets rather than clears - the same value
+ * the decompressor and the console reservation in g_ak39_setpin_as_gpio()
+ * write.
+ */
+struct gpio_sharepin_cfg share_cfg_module[] = {
+	{ePIN_AS_OPCLK,     SHARE_CFG1,  0x00000600, 0x00000200, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_JTAG,      SHARE_CFG12, 0x00000061, 0x00000061, 0x000003f0, 0x000003f0, 0, 0, 0, 0},
+	{ePIN_AS_RTCK,      SHARE_CFG1,  0x00000060, 0x00000060, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_I2S,       SHARE_CFG1,  0x0103c000, 0x0003c000, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_PWM1,      SHARE_CFG1,  0x00000800, 0x00000800, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_PWM2,      SHARE_CFG1,  0x00001000, 0x00001000, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_PWM3,      SHARE_CFG1,  0x00002000, 0x00002000, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_PWM4,      SHARE_CFG1,  0x00080000, 0x00080000, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_PWM5,      SHARE_CFG1,  0x00100000, 0x00100000, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_SPI1,      SHARE_CFG14, 0x02000000, 0x02000000, 0, 0, 0, 0, 0x00003f03, 0x00003103},
+	{ePIN_AS_SPI2,      SHARE_CFG1,  0, 0, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_UART1,     SHARE_CFG1,  0x00000006, 0x00000006, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_UART2,     SHARE_CFG2,  0, 0, 0x000000f0, 0x000000a0, 0, 0, 0, 0},
+	{ePIN_AS_CAMERA,    SHARE_CFG2,  0, 0, 0x000fffff, 0x00000000, 0, 0, 0, 0},
+	{ePIN_AS_MCI,       SHARE_CFG4,  0, 0, 0, 0, 0, 0, 0x00003fc0, 0x000031c0},
+	{ePIN_AS_SDIO,      SHARE_CFG14, 0x08000000, 0x00000000, 0, 0, 0, 0, 0x0ff00000, 0x05700000},
+	{ePIN_AS_MCI_8LINE, SHARE_CFG4,  0, 0, 0, 0, 0, 0, 0x0003ffc0, 0x00001780},
+	{ePIN_AS_MAC,       SHARE_CFG13, 0x00000600, 0x00000200, 0, 0, 0x0fffffff, 0x0575f5a5, 0, 0},
+	{ePIN_AS_RMAC,      SHARE_CFG13, 0x00000600, 0x00000200, 0, 0, 0x0fffffff, 0x01450525, 0, 0},
+	{ePIN_AS_I2C,       SHARE_CFG1,  0x00000180, 0x00000180, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_IRDA,      SHARE_CFG3,  0, 0, 0, 0, 0, 0, 0, 0},
+	{ePIN_AS_DUMMY,     EXIT_CFG,    0, 0, 0, 0, 0, 0, 0, 0},
+};
+
+#else	/* two-bank parts: vendor table, unchanged */
 
 //share pin config fore module in AK39xx
 struct gpio_sharepin_cfg share_cfg_module[] = {
@@ -42,7 +80,96 @@ struct gpio_sharepin_cfg share_cfg_module[] = {
     {ePIN_AS_DUMMY,    EXIT_CFG,	0, 0, 0, 0, 0, 0}
 };
 
+#endif	/* CONFIG_CPU_AK3918EV200 */
 
+#ifdef CONFIG_CPU_AK3918EV200
+
+/*
+ * Pull configuration for AK3918EV200, recovered from this unit's stock kernel.
+ * PUPD_CFG1..4 are SYSCTRL +0x80, +0x84, +0x88 and +0xE0.  Pads 3, 49, 56 and
+ * 79 have no entry on this part.
+ */
+struct gpio_pupd_cfg pupd_cfg_info[] = {
+	//pin, index, register, up/down
+	{AK_GPIO_0,  0,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_1,  1,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_2,  2,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_4,  4,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_5,  5,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_6,  4,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_7,  5,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_8,  6,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_9,  7,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_10, 0,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_11, 1,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_12, 2,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_13, 3,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_14, 5,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_15, 6,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_16, 7,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_17, 8,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_18, 9,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_19, 11, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_20, 12, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_21, 13, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_22, 14, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_23, 15, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_24, 16, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_25, 0,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_26, 1,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_27, 6,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_28, 7,  PUPD_CFG1, PULLUP},
+	{AK_GPIO_29, 2,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_30, 3,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_31, 4,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_32, 5,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_33, 6,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_34, 7,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_35, 8,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_36, 9,  PUPD_CFG4, PULLUP},
+	{AK_GPIO_37, 10, PUPD_CFG4, PULLUP},
+	{AK_GPIO_38, 11, PUPD_CFG4, PULLUP},
+	{AK_GPIO_39, 12, PUPD_CFG4, PULLUP},
+	{AK_GPIO_40, 13, PUPD_CFG4, PULLUP},
+	{AK_GPIO_41, 14, PUPD_CFG4, PULLUP},
+	{AK_GPIO_42, 15, PUPD_CFG4, PULLUP},
+	{AK_GPIO_43, 16, PUPD_CFG4, PULLUP},
+	{AK_GPIO_44, 17, PUPD_CFG4, PULLUP},
+	{AK_GPIO_45, 18, PUPD_CFG4, PULLUP},
+	{AK_GPIO_46, 19, PUPD_CFG4, PULLUP},
+	{AK_GPIO_47, 8,  PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_48, 9,  PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_50, 10, PUPD_CFG1, PULLUP},
+	{AK_GPIO_51, 11, PUPD_CFG1, PULLUP},
+	{AK_GPIO_52, 12, PUPD_CFG1, PULLUP},
+	{AK_GPIO_53, 13, PUPD_CFG1, PULLUP},
+	{AK_GPIO_54, 14, PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_55, 15, PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_57, 17, PUPD_CFG1, PULLUP},
+	{AK_GPIO_58, 18, PUPD_CFG1, PULLUP},
+	{AK_GPIO_59, 19, PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_60, 20, PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_61, 21, PUPD_CFG1, PULLDOWN},
+	{AK_GPIO_62, 22, PUPD_CFG1, PULLUP},
+	{AK_GPIO_63, 23, PUPD_CFG1, PULLUP},
+	{AK_GPIO_64, 0,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_65, 1,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_66, 2,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_67, 3,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_68, 8,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_69, 9,  PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_70, 10, PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_71, 11, PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_72, 12, PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_73, 13, PUPD_CFG2, PULLDOWN},
+	{AK_GPIO_74, 14, PUPD_CFG2, PULLUP},
+	{AK_GPIO_75, 15, PUPD_CFG2, PULLUP},
+	{AK_GPIO_76, 4,  PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_77, 10, PUPD_CFG3, PULLDOWN},
+	{AK_GPIO_78, 17, PUPD_CFG3, PULLDOWN},
+};
+
+#else	/* two-bank parts: vendor table, unchanged */
 
 struct gpio_pupd_cfg pupd_cfg_info[] = {
 	//pin, index, register, up/down
@@ -111,7 +238,118 @@ struct gpio_pupd_cfg pupd_cfg_info[] = {
 	{AK_GPIO_63, 18, PUPD_CFG1, PULLUP},
 };
 
+#endif	/* CONFIG_CPU_AK3918EV200 */
 
+#ifdef CONFIG_CPU_AK3918EV200
+
+/*
+ * Share-pin (pad mux) tables for AK3918EV200.
+ *
+ * These are pure silicon description, and the assignments are not the ones the
+ * two-bank parts use.  Four tables cover four registers, together describing
+ * pads 0..78.  A pad may appear more than once when selecting GPIO takes more
+ * than one non-adjacent mux bit: pad 5 needs both CON1 bit 5 and bit 6, since
+ * it carries PWM2, UART1_TXD, JTAG_RTCK, AIN1 and TWI2_SCK.  setpin_walk()
+ * applies every matching row, not just the first.
+ *
+ * The difference is not inert.  On this part CON1 bit 2 is the mux for pad
+ * GPIO2, one of the two UART0 console pads, while the two-bank layout puts
+ * pad 47 there - so requesting GPIO 47 on an EV200 with the wrong table takes
+ * the console away mid-boot and leaves pad 47 in its alternate function.
+ */
+
+//this used to clr in gpio chare pin cfg1
+struct sharepin_as_gpio sharepin_cfg_gpio1[] = {
+    {0,		0,		0,	AS_GPIO_CFG_BIT1},
+    {1,		1,		1,	AS_GPIO_CFG_BIT1},	/* UART0 console pad */
+    {2,		2,		2,	AS_GPIO_CFG_BIT1},	/* UART0 console pad */
+    {3,		3,		3,	AS_GPIO_CFG_BIT1},
+    {4,		4,		4,	AS_GPIO_CFG_BIT1},
+    {5,		5,		5,	AS_GPIO_CFG_BIT1},
+    {5,		5,		6,	AS_GPIO_CFG_BIT1},
+    {27,	27,		7,	AS_GPIO_CFG_BIT1},
+    {28,	28,		8,	AS_GPIO_CFG_BIT1},
+    {47,	47,		9,	AS_GPIO_CFG_BIT2},	/* shared with OPCLK */
+    {48,	48,		11,	AS_GPIO_CFG_BIT1},
+    {50,	50,		12,	AS_GPIO_CFG_BIT1},
+    {51,	51,		13,	AS_GPIO_CFG_BIT1},
+    {52,	52,		14,	AS_GPIO_CFG_BIT1},
+    {53,	53,		15,	AS_GPIO_CFG_BIT1},
+    {54,	54,		16,	AS_GPIO_CFG_BIT1},
+    {55,	55,		17,	AS_GPIO_CFG_BIT1},
+    {56,	56,		18,	AS_GPIO_CFG_BIT1},
+    {57,	57,		19,	AS_GPIO_CFG_BIT1},
+    {58,	58,		20,	AS_GPIO_CFG_BIT1},
+};
+
+//this used to clr in gpio share pin cfg2
+struct sharepin_as_gpio sharepin_cfg_gpio2[] = {
+    {64,	64,		0,	AS_GPIO_CFG_BIT1},
+    {65,	65,		1,	AS_GPIO_CFG_BIT1},
+    /*
+     * Verbatim from stock, inverted range and all: gpio_start 67 is greater
+     * than gpio_end 66, so this entry can never match and pads 66/67 have no
+     * mux entry.  Kept as-is rather than "corrected" to a guess, because we
+     * have no evidence for what the intended range was.
+     */
+    {67,	66,		2,	AS_GPIO_CFG_BIT1},
+    {6,		6,		4,	AS_GPIO_CFG_BIT2_01},
+    {7,		7,		6,	AS_GPIO_CFG_BIT2_01},
+    {8,		8,		8,	AS_GPIO_CFG_BIT2_01},
+    {9,		9,		10,	AS_GPIO_CFG_BIT2_01},
+    {68,	68,		12,	AS_GPIO_CFG_BIT1},
+    {69,	69,		13,	AS_GPIO_CFG_BIT1},
+    {70,	70,		14,	AS_GPIO_CFG_BIT1},
+    {71,	71,		15,	AS_GPIO_CFG_BIT1},
+    {72,	72,		16,	AS_GPIO_CFG_BIT1},
+    {73,	73,		17,	AS_GPIO_CFG_BIT1},
+    {74,	74,		18,	AS_GPIO_CFG_BIT1},
+    {75,	75,		19,	AS_GPIO_CFG_BIT1},
+};
+
+//this used to clr in gpio share pin cfg3
+struct sharepin_as_gpio sharepin_cfg_gpio3[] = {
+    {10,	10,		0,	AS_GPIO_CFG_BIT2},
+    {11,	11,		2,	AS_GPIO_CFG_BIT2},
+    {12,	12,		4,	AS_GPIO_CFG_BIT1},
+    {13,	13,		5,	AS_GPIO_CFG_BIT2},
+    {76,	76,		7,	AS_GPIO_CFG_BIT1},
+    {14,	14,		8,	AS_GPIO_CFG_BIT2},
+    {15,	15,		10,	AS_GPIO_CFG_BIT2},
+    {16,	16,		12,	AS_GPIO_CFG_BIT1},
+    {17,	17,		13,	AS_GPIO_CFG_BIT1},
+    {18,	18,		14,	AS_GPIO_CFG_BIT1},
+    {19,	19,		16,	AS_GPIO_CFG_BIT2},
+    {20,	20,		18,	AS_GPIO_CFG_BIT2},
+    {21,	21,		20,	AS_GPIO_CFG_BIT1},
+    {22,	22,		21,	AS_GPIO_CFG_BIT1},
+    {23,	23,		22,	AS_GPIO_CFG_BIT2},
+    {24,	24,		24,	AS_GPIO_CFG_BIT2},
+    {78,	78,		26,	AS_GPIO_CFG_BIT1},
+};
+
+//this used to clr in gpio share pin cfg4 (EV200 only, SYSCTRL + 0xDC)
+struct sharepin_as_gpio sharepin_cfg_gpio4[] = {
+    {25,	25,		0,	AS_GPIO_CFG_BIT1},
+    {26,	26,		1,	AS_GPIO_CFG_BIT1},
+    {29,	29,		2,	AS_GPIO_CFG_BIT2},
+    {30,	30,		4,	AS_GPIO_CFG_BIT2},
+    {31,	31,		6,	AS_GPIO_CFG_BIT1},
+    {32,	32,		7,	AS_GPIO_CFG_BIT1},
+    {33,	33,		8,	AS_GPIO_CFG_BIT2},
+    {34,	34,		10,	AS_GPIO_CFG_BIT2},
+    {35,	36,		12,	AS_GPIO_CFG_BIT2},
+    {37,	38,		14,	AS_GPIO_CFG_BIT2},
+    {39,	39,		16,	AS_GPIO_CFG_BIT2},
+    {40,	40,		18,	AS_GPIO_CFG_BIT2},
+    {41,	41,		20,	AS_GPIO_CFG_BIT1},	/* ircut_b */
+    {42,	42,		21,	AS_GPIO_CFG_BIT1},
+    {43,	43,		22,	AS_GPIO_CFG_BIT2},
+    {44,	44,		24,	AS_GPIO_CFG_BIT2},
+    {45,	46,		26,	AS_GPIO_CFG_BIT2},
+};
+
+#else	/* two-bank parts: vendor tables, unchanged */
 
 //this used to clr in gpio chare pin cfg1
 struct sharepin_as_gpio sharepin_cfg_gpio1[] = {
@@ -157,6 +395,7 @@ struct sharepin_as_gpio sharepin_cfg_gpio3[] = {
     {28,	28,		26, AS_GPIO_CFG_BIT1},
 };
 
+#endif	/* CONFIG_CPU_AK3918EV200 */
 
 #define INVALID_WK_BIT 0xff
 struct t_gpio_wakeup_cfg gpio_wakeup_cfg[] = {
@@ -252,9 +491,26 @@ void ak_group_config(T_GPIO_SHAREPIN_CFG mod_name)
     if(ePIN_AS_GPIO == mod_name) {
         //set all pin as gpio except uart0
         local_irq_save(flags);
+#ifdef CONFIG_CPU_AK3918EV200
+        /*
+         * The two-bank constants would clear CON1[2:1] here, which on this
+         * part is exactly the UART0 console pair.  CON1 = 0x6 keeps pads 1
+         * and 2 muxed as UART0.  CON2 = 0x550 follows from
+         * sharepin_cfg_gpio2[]: pads 6..9 are two-bit fields whose GPIO
+         * encoding is 0b01, at bits 4, 6, 8 and 10.
+         *
+         * Nothing in this tree calls ak_group_config(ePIN_AS_GPIO) today;
+         * these are kept correct so the first caller is not surprised.
+         */
+        __raw_writel(0x6, AK_SHAREPIN_CON1);
+		__raw_writel(0x550, AK_SHAREPIN_CON2);
+		__raw_writel(0x0, AK_SHAREPIN_CON3);
+		__raw_writel(0x0, AK_SHAREPIN_CON4);
+#else
         __raw_writel(0xc000, AK_SHAREPIN_CON1);
 		__raw_writel(0xf, AK_SHAREPIN_CON2);
 		__raw_writel(0x0, AK_SHAREPIN_CON3);
+#endif
         local_irq_restore(flags);
         return;
     }
@@ -290,6 +546,43 @@ void ak_group_config(T_GPIO_SHAREPIN_CFG mod_name)
                     __raw_writel(val, AK_SHAREPIN_CON3);
                     break;
 
+#ifdef CONFIG_CPU_AK3918EV200
+                case SHARE_CFG4: //set share pin cfg reg4
+                    val = __raw_readl(AK_SHAREPIN_CON4);
+                    val &= ~(share_cfg_module[i].reg4_bit_mask);
+                    val |= (share_cfg_module[i].reg4_bit_value);
+                    __raw_writel(val, AK_SHAREPIN_CON4);
+                    break;
+
+                case SHARE_CFG14:
+                    val = __raw_readl(AK_SHAREPIN_CON1);
+                    val &= ~(share_cfg_module[i].reg1_bit_mask);
+                    val |= (share_cfg_module[i].reg1_bit_value);
+                    __raw_writel(val, AK_SHAREPIN_CON1);
+
+                    val = __raw_readl(AK_SHAREPIN_CON4);
+                    val &= ~(share_cfg_module[i].reg4_bit_mask);
+                    val |= (share_cfg_module[i].reg4_bit_value);
+                    __raw_writel(val, AK_SHAREPIN_CON4);
+                    break;
+
+                case SHARE_CFG134:
+                    val = __raw_readl(AK_SHAREPIN_CON1);
+                    val &= ~(share_cfg_module[i].reg1_bit_mask);
+                    val |= (share_cfg_module[i].reg1_bit_value);
+                    __raw_writel(val, AK_SHAREPIN_CON1);
+
+                    val = __raw_readl(AK_SHAREPIN_CON3);
+                    val &= ~(share_cfg_module[i].reg3_bit_mask);
+                    val |= (share_cfg_module[i].reg3_bit_value);
+                    __raw_writel(val, AK_SHAREPIN_CON3);
+
+                    val = __raw_readl(AK_SHAREPIN_CON4);
+                    val &= ~(share_cfg_module[i].reg4_bit_mask);
+                    val |= (share_cfg_module[i].reg4_bit_value);
+                    __raw_writel(val, AK_SHAREPIN_CON4);
+                    break;
+#endif	/* CONFIG_CPU_AK3918EV200 */
 
                 case SHARE_CFG12:
 					val = __raw_readl(AK_SHAREPIN_CON1);
@@ -430,6 +723,34 @@ int g_ak39_setpin_as_gpio(unsigned int pin)
         return -1;
     }
 
+#ifdef CONFIG_CPU_AK3918EV200
+
+	/*
+	 * Reserve the UART0 console pads.  On this part they are CON1[1] and
+	 * CON1[2]; the two-bank layout has them at CON1[15:14].
+	 */
+	if (AK_GPIO_1 == pin || AK_GPIO_2 == pin) {
+		REG32(AK_SHAREPIN_CON1) |= (0x3 << 1);
+		return -1;
+	}
+
+	if (!setpin_walk(sharepin_cfg_gpio1, ARRAY_SIZE(sharepin_cfg_gpio1),
+			 AK_SHAREPIN_CON1, pin))
+		return 0;
+	if (!setpin_walk(sharepin_cfg_gpio2, ARRAY_SIZE(sharepin_cfg_gpio2),
+			 AK_SHAREPIN_CON2, pin))
+		return 0;
+	if (!setpin_walk(sharepin_cfg_gpio3, ARRAY_SIZE(sharepin_cfg_gpio3),
+			 AK_SHAREPIN_CON3, pin))
+		return 0;
+	if (!setpin_walk(sharepin_cfg_gpio4, ARRAY_SIZE(sharepin_cfg_gpio4),
+			 AK_SHAREPIN_CON4, pin))
+		return 0;
+
+	/* No entry: the pad has no mux and is always a GPIO. */
+	return 0;
+
+#else	/* two-bank parts */
 
 	unsigned long flags;
 
@@ -460,6 +781,7 @@ int g_ak39_setpin_as_gpio(unsigned int pin)
 
     return 0;
 
+#endif	/* CONFIG_CPU_AK3918EV200 */
 }
 
 /*
@@ -495,6 +817,11 @@ int g_ak39_gpio_pullup(unsigned int pin, unsigned char enable)
 				case PUPD_CFG3:
 					base = AK_PPU_PPD3;
 					break;
+#ifdef CONFIG_CPU_AK3918EV200
+				case PUPD_CFG4:
+					base = AK_PPU_PPD4;
+					break;
+#endif
 			}
 
 			local_irq_save(flags);
@@ -538,6 +865,11 @@ int g_ak39_gpio_pullup(unsigned int pin, unsigned char enable)
 				case PUPD_CFG3:
 					base = AK_PPU_PPD3;
 					break;
+#ifdef CONFIG_CPU_AK3918EV200
+				case PUPD_CFG4:
+					base = AK_PPU_PPD4;
+					break;
+#endif
 			}
 
 			local_irq_save(flags);
