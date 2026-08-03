@@ -981,8 +981,19 @@ void aisc_freq_set(void)
 	unsigned long uartdiv;
 
 	asicclk = CONFIG_ASIC_FREQ_VALUE;
-	div_od = 2;
-	div_n = 2;
+	/*
+	 * PLL dividers for the AK3918EV200.  This runs from ak39_map_io(),
+	 * before any console exists, and it reprograms the ASIC PLL *and* the
+	 * UART baud divisor on live hardware - so getting it wrong is silent.
+	 *
+	 * This part wants SYSCTRL+0x08 = 0x018213C8 and UART+0x00 = 0x30600363.
+	 * Those words are produced exactly by 100 MHz with div_od=1, div_n=3
+	 * (div_m=200, uartdiv=867).  The 2/2 pair this SDK release shipped
+	 * gives a different PLL word for any frequency.  Anyka's later 1.1.14
+	 * tree also uses 1/3.
+	 */
+	div_od = 1;
+	div_n = 3;
 	if ((div_n < 2) || (div_n > 6)
 		|| (div_od < 1) || (div_od > 3))
 		panic("Asic frequency parameter Error");
