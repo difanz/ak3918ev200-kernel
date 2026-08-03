@@ -15,3 +15,7 @@ obj-$(CONFIG_LINUX_AKSENSOR)   += wrap_sensor.o aksensor.o
 # ISP2 sensor framework.  This must follow the stack-B sensor drivers above;
 # i2c_add_driver() can synchronously probe an already registered client.
 obj-$(CONFIG_AK_ISP_CHAR)     += ak_sensor.o ak_sensor_common.o ak_sensor_i2c.o
+
+# ISP core. Anyka ships this as a prebuilt libispdrv.a; we build it from the
+# SDK sources instead. See notes/isp-port.md.
+obj-$(CONFIG_AK_ISP_CORE)     += ak39_isp2.o ak39_isp2_3a.o
