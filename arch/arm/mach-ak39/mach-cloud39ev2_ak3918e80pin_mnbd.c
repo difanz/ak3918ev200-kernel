@@ -655,6 +655,22 @@ static void __init ak3918_init_machine(void)
 }
 
 
+/*
+ * The ARM consistent window defaults to 2 MiB, and videobuf-dma-contig takes
+ * capture buffers out of it: four 1280x720 YUYV frames are 7.4 MB, so
+ * VIDIOC_REQBUFS succeeds and the mmap that follows returns ENOMEM.
+ *
+ * This costs virtual address space, not memory. init_consistent_dma_size()
+ * only moves consistent_base; the pages behind it still come from the buddy
+ * allocator on demand and go back on release. The whole price is one page
+ * table page per 2 MiB of window, so 2 -> 8 MiB is 12 KiB - which matters on
+ * a board with 36 MiB of usable RAM, and is why the window is 8 and not 16.
+ */
+static void __init ak39_init_early(void)
+{
+	init_consistent_dma_size(SZ_8M);
+}
+
 MACHINE_START(AK39XX, "Cloud39EV2_AK3918E80PIN_MNBD")
 /* Maintainer: */
 	.atag_offset = 0x100,
@@ -663,7 +679,7 @@ MACHINE_START(AK39XX, "Cloud39EV2_AK3918E80PIN_MNBD")
 	.reserve = NULL,
 	.init_irq = ak39_init_irq,
 	.init_machine = ak3918_init_machine,
-	.init_early = NULL,
+	.init_early = ak39_init_early,
 	.timer = &ak39_timer, 
     .restart = ak39_restart,
     
