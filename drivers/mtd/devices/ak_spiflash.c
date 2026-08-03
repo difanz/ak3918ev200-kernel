@@ -1304,6 +1304,151 @@ static struct flash_info __devinitdata ak_spiflash_supportlist [] = {
 	{ "gd25q64", 0xc84017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2|SFLAG_DUAL_READ|SFLAG_QUAD_READ|SFLAG_DUAL_IO_READ|SFLAG_QUAD_IO_READ|SFLAG_QUAD_WRITE , },
 	{ "gd25q128", 0xc84018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2|SFLAG_DUAL_READ|SFLAG_QUAD_READ|SFLAG_DUAL_IO_READ|SFLAG_QUAD_IO_READ|SFLAG_QUAD_WRITE ,},
 
+	/*
+	 * Additional SPI NOR JEDEC ids.
+	 *
+	 * An unrecognised JEDEC id means no MTD device is registered at all, so
+	 * no partitions and nothing for root= to mount - the board just stops
+	 * with one line of console output.  SPI NOR part numbers turn over
+	 * quickly (XMC ids alone keep being added upstream), and a board may
+	 * be built with whatever compatible part was available, so carrying
+	 * only a handful of them is fragile.
+	 *
+	 * Constraints this table has to respect:
+	 *
+	 *  - ADDR_SIZE is 3, so this driver can only address 16 MiB.  Larger
+	 *    parts need 4-byte opcodes and are left out rather than half
+	 *    supported.
+	 *  - jedec_probe() never fills in ext_jedec, so an entry with a
+	 *    non-zero ext_id could never match.  All imported entries use 0 and
+	 *    are deduplicated on the 3-byte id.
+	 *  - Single-line reads only.  Dual and quad modes need the controller's
+	 *    dummy-cycle setup to match the part, and that is not verified for
+	 *    any of these on this SoC - getting it wrong returns structurally
+	 *    mangled data, not an error.  Boot speed is irrelevant here;
+	 *    reading the right bytes is not.  SFLAG_COM_STATUS2 is kept where
+	 *    the part has quad support, because such parts have a second
+	 *    status register the driver needs to handle correctly.
+	 *  - Atmel DataFlash is excluded; it is not a plain NOR device.
+	 *
+	 * Parts without SFLAG_SECT_4K are listed so they are at least detected,
+	 * but note the hybrid partition layout is 4 KiB aligned and needs 4 KiB
+	 * erase to be writable.
+	 *
+	 * The fitted chip, xm25qh64c, keeps its own
+	 * entry above.
+	 */
+	{ "s25fl208k", 0x014014, 0, 64 * 1024, 16, SFLAG_SECT_4K, },
+	{ "s25fl116k", 0x014015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "s25fl164k", 0x014017, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "s25fl064l", 0x016017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "s25fl128l", 0x016018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25f08", 0x0b4014, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25f16", 0x0b4015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25f32", 0x0b4016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25f64", 0x0b4017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25f128", 0x0b4018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25q08", 0x0b6014, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25q16", 0x0b6015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25q32", 0x0b6016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25q64", 0x0b6017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xt25q128", 0x0b6018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "en25q80b", 0x1c3014, 0, 64 * 1024, 16, SFLAG_SECT_4K, },
+	{ "en25q32b", 0x1c3016, 0, 64 * 1024, 64, 0, },
+	{ "en25q64", 0x1c3017, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "en25q128b", 0x1c3018, 0, 64 * 1024, 256, 0, },
+	{ "en25s64", 0x1c3817, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "en25qh128", 0x1c7018, 0, 64 * 1024, 256, 0, },
+	{ "at25sl321", 0x1f4216, 0, 64 * 1024, 64, SFLAG_SECT_4K, },
+	{ "m25p80", 0x202014, 0, 64 * 1024, 16, 0, },
+	{ "xm25qu128c", 0x204118, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xm25qh64a", 0x207017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "xm25qh128a", 0x207018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "m25px16", 0x207115, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "m25px64", 0x207117, 0, 64 * 1024, 128, 0, },
+	{ "n25q032", 0x20ba16, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "n25q064", 0x20ba17, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "n25q128a13", 0x20ba18, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "n25q016a", 0x20bb15, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "n25q032a", 0x20bb16, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "n25q064a", 0x20bb17, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "n25q128a11", 0x20bb18, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "sk25lp128", 0x257018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "zb25vq128", 0x5e4018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "sst25wf020a", 0x621612, 0, 64 * 1024, 4, SFLAG_SECT_4K, },
+	{ "sst25wf040b", 0x621613, 0, 64 * 1024, 8, SFLAG_SECT_4K, },
+	{ "is25lp010e", 0x9d4011, 0, 64 * 1024, 2, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25lp020e", 0x9d4012, 0, 64 * 1024, 4, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25lq040b", 0x9d4013, 0, 64 * 1024, 8, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25lx128", 0x9d5a18, 0, 64 * 1024, 256, SFLAG_SECT_4K, },
+	{ "is25wx128", 0x9d5b18, 0, 64 * 1024, 256, SFLAG_SECT_4K, },
+	{ "is25lp008", 0x9d6014, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25lp016", 0x9d6015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25lp032", 0x9d6016, 0, 64 * 1024, 64, 0, },
+	{ "is25lp064", 0x9d6017, 0, 64 * 1024, 128, 0, },
+	{ "is25lp128", 0x9d6018, 0, 64 * 1024, 256, SFLAG_SECT_4K, },
+	{ "is25wp008", 0x9d7014, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25wp016", 0x9d7015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25wp032", 0x9d7016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25wp064", 0x9d7017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25wp128", 0x9d7018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "is25wj128f", 0x9d7118, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "sst25wf080", 0xbf2505, 0, 64 * 1024, 16, SFLAG_SECT_4K, },
+	{ "sst25vf064c", 0xbf254b, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "sst26wf032", 0xbf2622, 0, 64 * 1024, 64, SFLAG_SECT_4K, },
+	{ "sst26wf016b", 0xbf2641, 0, 64 * 1024, 32, SFLAG_SECT_4K, },
+	{ "sst26vf064b", 0xbf2643, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "sst26wf016", 0xbf2651, 0, 64 * 1024, 32, SFLAG_SECT_4K, },
+	{ "mx25l2005a", 0xc22012, 0, 64 * 1024, 4, SFLAG_SECT_4K, },
+	{ "mx25l4005a", 0xc22013, 0, 64 * 1024, 8, SFLAG_SECT_4K, },
+	{ "mx25l8005", 0xc22014, 0, 64 * 1024, 16, 0, },
+	{ "mx25l1606e", 0xc22015, 0, 64 * 1024, 32, SFLAG_SECT_4K, },
+	{ "mx25v8035f", 0xc22314, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "mx25l1633e", 0xc22415, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "mx25u2033e", 0xc22532, 0, 64 * 1024, 4, SFLAG_SECT_4K, },
+	{ "mx25u1635e", 0xc22535, 0, 64 * 1024, 32, SFLAG_SECT_4K, },
+	{ "mx25u3235f", 0xc22536, 0, 4 * 1024, 1024, SFLAG_SECT_4K, },
+	{ "mx25u6435f", 0xc22537, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "mx25u12835f", 0xc22538, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "mx25r1635f", 0xc22815, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "mx25r6435f", 0xc22817, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "mx25uw6445g", 0xc28137, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "mx25uw12845g", 0xc28138, 0, 64 * 1024, 256, SFLAG_SECT_4K, },
+	{ "mx25uw6345g", 0xc28437, 0, 64 * 1024, 128, SFLAG_SECT_4K, },
+	{ "mx25uw12345g", 0xc28438, 0, 64 * 1024, 256, SFLAG_SECT_4K, },
+	{ "gd25q16", 0xc84015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25q32", 0xc84016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25f64", 0xc84317, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25f128", 0xc84318, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lq32", 0xc86016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lq64c", 0xc86017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lq128", 0xc86018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lf80", 0xc86314, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lf16", 0xc86315, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lf32", 0xc86316, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lf64", 0xc86317, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lf128", 0xc86318, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "gd25lx128j", 0xc86818, 0, 64 * 1024, 256, SFLAG_SECT_4K, },
+	{ "w25p80", 0xef2014, 0, 64 * 1024, 16, 0, },
+	{ "w25p16", 0xef2015, 0, 64 * 1024, 32, 0, },
+	{ "w25p32", 0xef2016, 0, 64 * 1024, 64, 0, },
+	{ "w25x05", 0xef3010, 0, 64 * 1024, 1, SFLAG_SECT_4K, },
+	{ "w25q20cl", 0xef4012, 0, 64 * 1024, 4, SFLAG_SECT_4K, },
+	{ "w25q80bl", 0xef4014, 0, 64 * 1024, 16, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q16cl", 0xef4015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q20bw", 0xef5012, 0, 64 * 1024, 4, SFLAG_SECT_4K, },
+	{ "w25q80", 0xef5014, 0, 64 * 1024, 16, SFLAG_SECT_4K, },
+	{ "w25q20ew", 0xef6012, 0, 64 * 1024, 4, SFLAG_SECT_4K, },
+	{ "w25q16dw", 0xef6015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q32dw", 0xef6016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q64dw", 0xef6017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q128fw", 0xef6018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q16jv", 0xef7015, 0, 64 * 1024, 32, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q32jv", 0xef7016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q64jv", 0xef7017, 0, 64 * 1024, 128, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q128jv", 0xef7018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q32jwm", 0xef8016, 0, 64 * 1024, 64, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
+	{ "w25q128jw", 0xef8018, 0, 64 * 1024, 256, SFLAG_SECT_4K|SFLAG_COM_STATUS2, },
 };
 
 /**
