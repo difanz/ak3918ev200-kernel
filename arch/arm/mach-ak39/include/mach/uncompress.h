@@ -49,8 +49,19 @@
 
 /*********** Shared pin control reigsters ********/
 #define SRDPIN_CTRL1_REG     	REG_PA_VAL(AK_PA_SYSCTRL, 0x74) //0x08000074
+#ifdef CONFIG_CPU_AK3918EV200
+/*
+ * SHAREPIN_CON1 assigns pads differently on this part: the UART0 console pair
+ * is pads 1 and 2 at CON1[1] and CON1[2].  Bits 14 and 15 belong to pads 52
+ * and 53 here, so the two-bank values below would mux those instead and leave
+ * the console pads alone.
+ */
+#define UART0_RXD				1
+#define UART0_TXD				2
+#else
 #define UART0_RXD				14
 #define UART0_TXD				15
+#endif
 #define UART1_RXD				16
 #define UART1_TXD				18
 #define UART1_CTS				20
@@ -184,7 +195,16 @@ static void uart_init(void)
 	SRDPIN_CTRL1_REG |= SRDPIN_UART_RXTX_BIT;
 
 	/* configuration uart pin pullup disable */
+#ifndef CONFIG_CPU_AK3918EV200
+	/*
+	 * Skipped on EV200: pupd_cfg_info[] has not been corrected for this part
+	 * yet, so we have no verified PPU_PPD1 bit positions for the console
+	 * pads, and the two-bank values here would configure the wrong ones.
+	 * U-Boot has already set the pads up by the time this runs, so writing
+	 * nothing is strictly safer than writing a guess.  See TODO.md.
+	 */
 	PPU_PPD1_REG |= (0x1 << RXD_PU_BIT) | (0x1 << TXD_PU_BIT);
+#endif
 
 	asic_clk = __get_asic_clk()*1000000;
 	clk_div = __uidiv(asic_clk, BAUD_RATE) - 1;
