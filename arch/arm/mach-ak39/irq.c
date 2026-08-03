@@ -345,7 +345,15 @@ static void ak39_gpio_irqhandler(unsigned int irq, struct irq_desc *desc)
 	unsigned int i;
 	unsigned int off;
 
-	for (i = 0; i < 4; i++) {
+	/*
+	 * One pass per bank of 32 GPIO IRQ sources.  IRQ_GPIO_0 + 64 is already
+	 * NR_IRQS, so only two banks can produce a valid IRQ number.  The
+	 * hardcoded 4 walked off the end of each register group and read
+	 * INT_MODE1 as a mask and EDGE_STATUS1 as a polarity; every IRQ number
+	 * that produced was >= NR_IRQS and got dropped by generic_handle_irq(),
+	 * so it cost interrupt-context cycles rather than correctness.
+	 */
+	for (i = 0; i < AK_GPIO_IRQ_BANKS; i++) {
 		enabled_irq = __raw_readl(AK_GPIO_INT_MASK1 + i * 4);
 
 		while (enabled_irq) {
@@ -384,6 +392,14 @@ void __init ak39_init_irq(void)
 	/* mask all gpio interrupts */
 	__raw_writel(0x0, AK_GPIO_INT_MASK1);
 	__raw_writel(0x0, AK_GPIO_INT_MASK2);
+#ifdef CONFIG_CPU_AK3918EV200
+	/*
+	 * The third bank has no IRQ numbers behind it, but leaving its mask at
+	 * whatever reset put there lets it drive the shared GPIO interrupt line
+	 * with nothing able to service it.
+	 */
+	__raw_writel(0x0, AK_GPIO_INT_MASK3);
+#endif
 
 	/* mask all l2 interrupts */
 	__raw_writel(0x0, AK_L2MEM_IRQ_ENABLE);
