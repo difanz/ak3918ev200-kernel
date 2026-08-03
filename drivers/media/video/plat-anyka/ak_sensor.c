@@ -586,7 +586,7 @@ static struct i2c_driver aksensor_i2c_driver = {
  * module function
  */
 
-int aksensor_module_init(void)
+static int __init aksensor_module_init(void)
 {
 	SENDBG("entry %s\n", __func__);
 
@@ -594,17 +594,16 @@ int aksensor_module_init(void)
 	return i2c_add_driver(&aksensor_i2c_driver);
 }
 
-void aksensor_module_exit(void)
+static void __exit aksensor_module_exit(void)
 {
 	SENDBG("entry %s\n", __func__);
 
 	i2c_del_driver(&aksensor_i2c_driver);
 }
 
-/*module_init(aksensor_module_init);
+module_init(aksensor_module_init);
 module_exit(aksensor_module_exit);
 
 MODULE_DESCRIPTION("SoC Camera driver for aksensor");
 MODULE_AUTHOR("dengzhou");
 MODULE_LICENSE("GPL v2");
-*/
