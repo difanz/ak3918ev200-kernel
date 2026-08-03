@@ -545,6 +545,19 @@ config AK_ISP_CHAR
 
 	  If unsure, say N.
 
+config AK_INFO_DUMP
+	bool
+	depends on AK_ISP_CHAR
+	default y
+	help
+	  Export the detected sensor id and the configured video-reserved memory
+	  size through /sys/ak_info_dump.  Camera userspace uses these values to
+	  select a sensor tuning blob and size its reserved-memory allocator.
+
+	  This follows AK_ISP_CHAR because both consumers belong to the ISP2
+	  camera stack.  Images without that stack, such as recovery images, do
+	  not need this interface.
+
 comment "user space generic gpio controller"
 config GPIOS_AKCUSTOM
 	tristate "Generic akgpio custom support"
