@@ -5,6 +5,7 @@
 #include <linux/ioctl.h>
 #include <linux/fs.h>
 #include <linux/export.h>
+#include <linux/bug.h>
 #include <linux/module.h>
 #include <linux/miscdevice.h>
 #include <asm/uaccess.h>
@@ -703,7 +704,9 @@ static int printk_nr_3d_para(AK_ISP_3D_NR_ATTR *nr_3d_para)
 	ISP_PRINTF("nr_3d_para->manual_3d_nr.t_y_mc_k=%d\n", nr_3d_para->manual_3d_nr.t_y_mc_k);
 	ISP_PRINTF("nr_3d_para->manual_3d_nr.t_y_ac_th=%d\n", nr_3d_para->manual_3d_nr.t_y_ac_th);
 	ISP_PRINTF("nr_3d_para->manual_3d_nr.md_th=%d\n", nr_3d_para->manual_3d_nr.md_th);
+#ifndef CONFIG_CPU_AK3918EV200
 	ISP_PRINTF("nr_3d_para->manual_3d_nr.tnr_t_y_ex_k_cfg=%d\n", nr_3d_para->manual_3d_nr.tnr_t_y_ex_k_cfg);
+#endif
 
 	for (j=0; j<17; j++)
 	{
@@ -751,7 +754,9 @@ static int printk_nr_3d_para(AK_ISP_3D_NR_ATTR *nr_3d_para)
 		ISP_PRINTF("nr_3d_para->linkage_3d_nr[%d].t_y_mc_k=%d\n", i, nr_3d_para->linkage_3d_nr[i].t_y_mc_k);
 		ISP_PRINTF("nr_3d_para->linkage_3d_nr[%d].t_y_ac_th=%d\n", i, nr_3d_para->linkage_3d_nr[i].t_y_ac_th);
 		ISP_PRINTF("nr_3d_para->linkage_3d_nr[%d].md_th=%d\n", i, nr_3d_para->linkage_3d_nr[i].md_th);
+#ifndef CONFIG_CPU_AK3918EV200
 		ISP_PRINTF("nr_3d_para->linkage_3d_nr[%d].tnr_t_y_ex_k_cfg=%d\n", i, nr_3d_para->linkage_3d_nr[i].tnr_t_y_ex_k_cfg);
+#endif
 
 		for (j=0; j<17; j++)
 		{
@@ -1197,10 +1202,12 @@ static int printk_misc_para(AK_ISP_MISC_ATTR *misc_para)
 	ISP_PRINTF("misc_para->frame_start_delay_num=%d\n", misc_para->frame_start_delay_num);
 	ISP_PRINTF("misc_para->flip_en=%d\n", misc_para->flip_en);
 	ISP_PRINTF("misc_para->mirror_en=%d\n", misc_para->mirror_en);
+#ifndef CONFIG_CPU_AK3918EV200
 	ISP_PRINTF("misc_para->twoframe_merge_en=%d\n", misc_para->twoframe_merge_en);
 	ISP_PRINTF("misc_para->mipi_line_end_sel=%d\n", misc_para->mipi_line_end_sel);
 	ISP_PRINTF("misc_para->mipi_line_end_cnt_en_cfg=%d\n", misc_para->mipi_line_end_cnt_en_cfg);
 	ISP_PRINTF("misc_para->mipi_count_time=%d\n", misc_para->mipi_count_time);
+#endif
 
 	return 0;
 }
@@ -3505,6 +3512,22 @@ void *ispmalloc(unsigned long bytes)
 {
 	return kzalloc(bytes, GFP_KERNEL);
 }
+
+/*
+ * These ioctls hand the kernel a bare user pointer and copy sizeof(attr) bytes
+ * through it; nothing on the wire carries a length. So if a struct here is
+ * larger than the one userspace passes, the copy runs off the end of the
+ * caller's object and the only symptom is a wrong picture. Stock's conf blob
+ * pins both of these - 1084 and 26, each after its 4-byte module header - so
+ * assert them at build time rather than discover it on a flashed board.
+ */
+#ifdef CONFIG_CPU_AK3918EV200
+static inline void akisp_abi_build_assertions(void)
+{
+	BUILD_BUG_ON(sizeof(AK_ISP_3D_NR_ATTR) != 1084);
+	BUILD_BUG_ON(sizeof(AK_ISP_MISC_ATTR) != 26);
+}
+#endif
 
 static int akisp_open(struct inode *node, struct file *file)
 {
