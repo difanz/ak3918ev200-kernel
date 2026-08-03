@@ -12,6 +12,11 @@ obj-$(CONFIG_SENSOR_NT99141)+= camera_nt99141.o
 # wrap sensor
 obj-$(CONFIG_LINUX_AKSENSOR)   += wrap_sensor.o aksensor.o
 
+# Stack-B sensor drivers register themselves before the aksensor I2C driver is
+# added.  Keep every sensor_*.o in this block so probe_sensors() sees the whole
+# runtime-detection registry when an existing board-info client probes.
+obj-$(CONFIG_SENSOR_GC1084)   += sensor_gc1084.o
+
 # ISP2 sensor framework.  This must follow the stack-B sensor drivers above;
 # i2c_add_driver() can synchronously probe an already registered client.
 obj-$(CONFIG_AK_ISP_CHAR)     += ak_sensor.o ak_sensor_common.o ak_sensor_i2c.o
