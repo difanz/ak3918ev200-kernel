@@ -75,7 +75,9 @@
 #define AK_PA_L2CTRL		(AK_PA_SUBCTRL + 0x40000)
 
 #define AK_VA_I2C			(AK_VA_SUBCTRL + 0x50000)
-#define AK_PA_I2C			(AK_VA_SUBCTRL + 0x50000)
+/* Was defined from AK_VA_SUBCTRL, so it evaluated to a virtual address.
+ * Unused so far, which is why it never bit. */
+#define AK_PA_I2C			(AK_PA_SUBCTRL + 0x50000)
 
 #define AK_VA_IRDA			(AK_VA_SUBCTRL + 0x60000)
 #define AK_PA_IRDA			(AK_PA_SUBCTRL + 0x60000)
