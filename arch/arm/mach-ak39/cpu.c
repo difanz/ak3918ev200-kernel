@@ -25,12 +25,17 @@
 #endif
 
 /*
- * The register at AK_VA_SYSCTRL + 0 reports a revision code, not a part
- * number, so a single expected value only matches the revision this SDK
- * release was cut against.
+ * Silicon revisions this port has been seen on.  The register at
+ * AK_VA_SYSCTRL + 0 reports a revision code, not a part number, so a single
+ * expected value only ever matches the revisions that existed when the SDK
+ * release was cut.
+ *
+ * 0x20120100  the value this SDK release shipped with
+ * 0x20150200  AK3918EV200, the revision this port targets
  */
 static const unsigned long akcpu_known_ids[] __initconst = {
 	0x20120100,
+	0x20150200,
 };
 
 
@@ -68,8 +73,15 @@ void __init ak39_map_io(void)
 
 	printk("ANYKA CPU %s (ID 0x%lx)\n", AKCPU_TYPE, regval);
 
+	/*
+	 * An unrecognised revision is worth reporting, but it is not worth
+	 * killing the boot for: this runs from paging_init(), long before any
+	 * console is registered, so the panic() that used to be here produced a
+	 * silent hang with no way to tell it apart from a lockup.
+	 */
 	if (i == ARRAY_SIZE(akcpu_known_ids))
-		panic("ANYKA CPU ID 0x%lx is not supported\n", regval);
+		pr_warn("ANYKA CPU ID 0x%lx is not a revision this port has been tested on\n",
+			regval);
 
 	/* need to change asic freq is here, Because higher asic freq  was affected usb function,
 	 * I don't know essential reason of the problem 
