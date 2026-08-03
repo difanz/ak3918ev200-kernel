@@ -522,6 +522,18 @@ config AK_DAC_CLOCK
 	help
 	If you say yes here you retrieve the elapsed time in dac driver
 
+config AK_USER_GPIO
+	bool "Anyka named board GPIO sysfs interface"
+	depends on ARCH_AK39
+	help
+	  Export the board's named GPIO lines - illumination, IR-cut, Wi-Fi
+	  power, speaker amplifier - as root-writable files under
+	  /sys/user-gpio, using the name table supplied by board platform
+	  data.  Boards without a struct ak_user_gpio_pdata device are
+	  unaffected.
+
+	  If unsure, say N.
+
 config AK_ISP_CHAR
 	bool "Anyka ISP character device (/dev/isp_char)"
 	depends on ARCH_AK39 && AK_ISP_CORE && I2C && SOC_CAMERA
