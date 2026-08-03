@@ -39,6 +39,39 @@ static const unsigned long akcpu_known_ids[] __initconst = {
 };
 
 
+/*
+ * Memory layout invariant for this SoC family.
+ *
+ * arch/arm/mach-ak39/Makefile.boot derives both the decompressed kernel load
+ * address and the boot-parameter address from CONFIG_RAM_BASE plus
+ * CONFIG_VIDEO_RESERVED_MEM_SIZE:
+ *
+ *	zreladdr    = CONFIG_RAM_BASE + CONFIG_VIDEO_RESERVED_MEM_SIZE + 0x8000
+ *	params_phys = CONFIG_RAM_BASE + CONFIG_VIDEO_RESERVED_MEM_SIZE + 0x100
+ *
+ * CONFIG_PHYS_OFFSET is an independent Kconfig hex; Kconfig cannot derive it.
+ * With CONFIG_ARM_PATCH_PHYS_VIRT disabled (which this SoC requires, because
+ * arch/arm/kernel/head.S expects a 16 MiB aligned physical base and these
+ * layouts are only 8 MiB aligned) __phys_to_virt() and __virt_to_phys() are
+ * compile-time constant folds over CONFIG_PHYS_OFFSET.
+ *
+ * arch/arm/kernel/head.S is position independent: it derives the real physical
+ * base with adr and builds both the kernel direct mapping and the boot-params
+ * mapping from it.  So a disagreement between the two values does not stop
+ * early assembly - it silently displaces every C-level address conversion.
+ * The first casualty is phys_to_virt(__atags_pointer) in setup_machine_tags(),
+ * which faults before trap_init() has installed any vectors and hangs the CPU
+ * with no console output.
+ *
+ * Fail the build instead.
+ */
+#if defined(CONFIG_PHYS_OFFSET) && defined(CONFIG_RAM_BASE) && \
+	defined(CONFIG_VIDEO_RESERVED_MEM_SIZE)
+#if CONFIG_PHYS_OFFSET != (CONFIG_RAM_BASE + CONFIG_VIDEO_RESERVED_MEM_SIZE)
+#error CONFIG_PHYS_OFFSET must equal CONFIG_RAM_BASE + CONFIG_VIDEO_RESERVED_MEM_SIZE
+#endif
+#endif
+
 
 #define IODESC_ENT(x) 							\
 {												\
