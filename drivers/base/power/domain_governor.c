@@ -219,7 +219,7 @@ static bool default_power_down_ok(struct dev_pm_domain *pd)
 	 * time and the time needed to turn the domain on is the maximum
 	 * theoretical time this domain can spend in the "off" state.
 	 */
-	genpd->max_off_time_ns = min_off_time_ns;
+	genpd->max_off_time_ns = min_off_time_ns - genpd->power_on_latency_ns;
 	return true;
 }
 
