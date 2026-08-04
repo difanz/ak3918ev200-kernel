@@ -62,6 +62,19 @@
 #define UART0_RXD				2
 #define UART0_TXD				3
 
+#elif defined(CONFIG_MACH_AK3918EV200)
+/*
+ * UART0 console pads are 1 and 2. PULL_REG0 (== PPU_PPD1_REG) is
+ * pad-indexed: pad1 -> bit1, pad2 -> bit2.
+ */
+#define PPU_PPD1_REG           	REG32(AK_PA_SYSCTRL + 0x80)  //0x08000080
+#define TXD0_PU_BIT             2
+#define RXD0_PU_BIT             1
+/*********** Shared pin control reigsters ********/
+#define SRDPIN_CTRL1_REG     	REG32(AK_PA_SYSCTRL + 0x74) //0x08000074
+#define UART0_RXD				1
+#define UART0_TXD				2
+
 #elif defined(CONFIG_MACH_AK37E)
 /* pullup/pulldown configure registers */
 #define PPU_PPD1_REG           	REG32(AK_PA_SYSCTRL + 0x1E4) //0x080001E4
@@ -144,7 +157,7 @@ static unsigned long __get_asic_pll_clk(void)
 		return asic_pll_clk;
 #endif
 
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 	asic_pll_clk = (12 * pll_m)/(pll_n * (1 << pll_od)); // clk unit: MHz
 
 	if ((pll_od >= 1) && ((pll_n >= 2) && (pll_n <= 6)) 
@@ -167,7 +180,7 @@ static unsigned long __get_vclk(void)
 	return __get_asic_pll_clk()/(2*(div + 1));
 #endif
 
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 	div = (regval & (0x7 << 17)) >> 17;
 	if (div == 0)
 		return __get_asic_pll_clk() >> 1;
@@ -213,7 +226,7 @@ static void uart_init(void)
 #ifdef CONFIG_MACH_AK37E
 	UART_CONF1_REG &= ~((0x1 << TX_STATUS_CLR_BIT) | (0x1 << RX_STATUS_CLR_BIT) | 0xFFFF);
 #endif
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 	UART_CONF1_REG &= ~((0x1 << TX_STATUS_CLR_BIT) | (0x1 << RX_STATUS_CLR_BIT) | 0xFF);
 #endif
 	UART_CONF1_REG |= (0x1 << TX_STATUS_CLR_BIT) | (0x1 << RX_STATUS_CLR_BIT) | clk_div;

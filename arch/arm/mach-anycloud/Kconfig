@@ -11,3 +11,9 @@ config MACH_AK39EV330
 	depends on ARCH_AK
 	help
 	  Support for ak39ev330
+
+config MACH_AK3918EV200
+	bool "AK3918EV200 support"
+	depends on ARCH_AK
+	help
+	  Support for the AK3918EV200 SoC variant.

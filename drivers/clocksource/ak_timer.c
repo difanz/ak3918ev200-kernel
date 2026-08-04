@@ -110,6 +110,19 @@
 #define AK_CE_TIMER_INDEX		5
 #endif
 
+#ifdef CONFIG_MACH_AK3918EV200
+/*
+ * No extended timer6-10 bank on this part. Use two of the base 5 timers
+ * instead: indices 3/4 (this file's 0-based AK_TIMER3/AK_TIMER4, offsets
+ * SYSCTRL+0xCC/0xD4).
+ */
+#define AK_CE_CTRL1       		AK_TIMER3_CTRL1
+#define AK_CE_CTRL2       		AK_TIMER3_CTRL2
+#define AK_CS_CTRL1       		AK_TIMER4_CTRL1
+#define AK_CS_CTRL2       		AK_TIMER4_CTRL2
+#define AK_CE_TIMER_INDEX		3
+#endif
+
 
 #define TIMER_CLK_INPUT     	(12000000)
 #define TIMER_CNT           	(TIMER_CLK_INPUT/HZ)
@@ -336,7 +349,7 @@ static void __init ak_timer_init(struct device_node *node)
 CLOCKSOURCE_OF_DECLARE(ak_hrtimer, "anyka,ak37d-system-timer", ak_timer_init);
 #endif
 
-#ifdef CONFIG_MACH_AK39EV330
+#if defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 CLOCKSOURCE_OF_DECLARE(ak_hrtimer, "anyka,ak39ev330-system-timer", ak_timer_init);
 #endif
 

@@ -35,6 +35,14 @@
 #define AKCPU_VALUE			0x20160101
 #define AKCPU_TYPE			"AK39XXEV330"
 
+/*
+ * AK3918EV200 boards report one of two CPU-ID values at this register;
+ * both identify AK3918EV200 silicon.
+ */
+#define AKCPU_VALUE_EV200_1		0x20120100
+#define AKCPU_VALUE_EV200_2		0x20150200
+#define AKCPU_TYPE_EV200		"AK3918EV200"
+
 #define IODESC_ENT(x) 							\
 {												\
 	.virtual = (unsigned long)AK_VA_##x,		\
@@ -60,11 +68,13 @@ void __init ak39ev330_map_io(void)
 	iotable_init(ak39ev330_iodesc, ARRAY_SIZE(ak39ev330_iodesc));
 
 	regval = __raw_readl(AK_CPU_ID);
-	if (regval == AKCPU_VALUE) 
+	if (regval == AKCPU_VALUE)
 		pr_info("ANYKA CPU %s (ID 0x%lx)\n", AKCPU_TYPE, regval);
+	else if (regval == AKCPU_VALUE_EV200_1 || regval == AKCPU_VALUE_EV200_2)
+		pr_info("ANYKA CPU %s (ID 0x%lx)\n", AKCPU_TYPE_EV200, regval);
 	else
 		pr_info("Unknown ANYKA CPU ID: 0x%lx\n", regval);
-		
+
 }
 
 void wdt_enable(void);
@@ -116,3 +126,25 @@ DT_MACHINE_START(AK39xxEV330, "AK39EV330")
 	.reserve = NULL,
     .restart = ak39ev330_restart,
 MACHINE_END
+
+#ifdef CONFIG_MACH_AK3918EV200
+/*
+ * The second DT_MACHINE_START() argument is what ends up in
+ * /proc/cpuinfo's "Hardware" line: "Cloud39EV2_AK3918E80PIN_MNBD".
+ */
+static const char * const ak3918ev200_dt_compat[] = {
+	"anyka,ak3918ev200",
+	NULL
+};
+
+DT_MACHINE_START(AK3918EV200, "Cloud39EV2_AK3918E80PIN_MNBD")
+/* Maintainer: Alex Zhang <alex@osqdu.org> */
+	.dt_compat	= ak3918ev200_dt_compat,
+	.map_io = ak39ev330_map_io,
+	.init_time = NULL,
+	.init_machine = ak39ev330_init,
+	.init_early = NULL,
+	.reserve = NULL,
+	.restart = ak39ev330_restart,
+MACHINE_END
+#endif /* CONFIG_MACH_AK3918EV200 */
