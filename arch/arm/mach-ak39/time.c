@@ -1,4 +1,4 @@
-/* 
+/*
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -21,8 +21,11 @@
 #include <linux/irq.h>
 #include <linux/err.h>
 #include <linux/clk.h>
+#include <linux/clocksource.h>
+#include <linux/clockchips.h>
 
 #include <asm/io.h>
+#include <asm/sched_clock.h>
 #include <asm/mach/time.h>
 
 #include <mach/map.h>
@@ -30,22 +33,8 @@
 
 #define AK39_TIMER1_CTRL1		(AK_VA_SYSCTRL + 0xB4)
 #define AK39_TIMER1_CTRL2		(AK_VA_SYSCTRL + 0xB8)
-#define AK39_TIMER2_CTRL1		(AK_VA_SYSCTRL + 0xBC)
-#define AK39_TIMER2_CTRL2		(AK_VA_SYSCTRL + 0xC0)
-#define AK39_TIMER3_CTRL1		(AK_VA_SYSCTRL + 0xC4)
-#define AK39_TIMER3_CTRL2		(AK_VA_SYSCTRL + 0xC8)
-#define AK39_TIMER4_CTRL1		(AK_VA_SYSCTRL + 0xCC)
-#define AK39_TIMER4_CTRL2		(AK_VA_SYSCTRL + 0xD0)
 #define AK39_TIMER5_CTRL1		(AK_VA_SYSCTRL + 0xD4)
 #define AK39_TIMER5_CTRL2		(AK_VA_SYSCTRL + 0xD8)
-
-#define AK39_TIMER_CTRL1		AK39_TIMER1_CTRL1
-#define AK39_TIMER_CTRL2		AK39_TIMER1_CTRL2
-#define IRQ_TIMER				IRQ_TIMER1
-
-#define TIMER_CNT				(12000000/HZ)
-#define TIMER_USEC_SHIFT		16
-#define TIMER_CNT_MASK			(0x3F<<26)
 
 //define timer register bits
 #define TIMER_CLEAR_BIT			(1<<30)
@@ -54,161 +43,157 @@
 #define TIMER_STATUS_BIT		(1<<27)
 #define TIMER_READ_SEL_BIT		(1<<26)
 
-//define pwm/pwm mode
+//define timer work modes (bits 25:24)
 #define MODE_AUTO_RELOAD_TIMER	0x0
 #define MODE_ONE_SHOT_TIMER		0x1
-#define MODE_PWM				0x2   
 
+#define TIMER_CTRL2_PERIODIC	(TIMER_ENABLE_BIT | TIMER_FEED_BIT | \
+					(MODE_AUTO_RELOAD_TIMER << 24))	/* 0x30000000 */
+#define TIMER_CTRL2_ONESHOT		(TIMER_ENABLE_BIT | TIMER_FEED_BIT | \
+					(MODE_ONE_SHOT_TIMER << 24))	/* 0x31000000 */
 
-static u_int64_t ghrtick = 0;
-static unsigned long usec_per_tick; /* usec per tick, left shift 16 */
+#define TIMER_CLK_RATE			12000000
+#define TIMER_PERIODIC_LOAD		((TIMER_CLK_RATE / HZ) - 1)
 
-/* copy from plat-s3c/time.c
- *
- *  timer_mask_usec_ticks
- *
- * given a clock and divisor, make the value to pass into timer_ticks_to_usec
- * to scale the ticks into usecs
-*/
-static inline unsigned long
-timer_mask_usec_ticks(unsigned long scaler, unsigned long pclk)
-{
-	unsigned long den = pclk / 1000;
-
-	return ((1000 << TIMER_USEC_SHIFT) * scaler + (den >> 1)) / den;
-}
-
-static inline unsigned long timer_ticks_to_usec(unsigned long ticks)
-{
-    unsigned long ret;
-
-    ret = ticks * usec_per_tick;
-    ret += 1 << (TIMER_USEC_SHIFT - 4);
-
-	return ret >> TIMER_USEC_SHIFT;
-}
 
 /*
- * Returns microsecond  since last clock interrupt.  Note that interrupts
- * will have been disabled by do_gettimeoffset()
- * IRQs are disabled before entering here from do_gettimeofday()
- *
- * FIXME: this need be checked 
+ * TIMER5 free-running clocksource read.
+ * The hardware is a down-counter, so invert the latched count to present an
+ * up-counting value to the timekeeping core.
  */
-static unsigned long ak39_gettimeoffset(void)
+static cycle_t ak_timer5_read(struct clocksource *cs)
 {
-	unsigned long tdone;
-	unsigned long tcnt;
+	unsigned long flags;
+	u32 ctrl2, count;
 
-	/* work out how many ticks have gone since last timer interrupt */
+	local_irq_save(flags);
 
-	//select read current count mode
-	tdone = __raw_readl(AK39_TIMER_CTRL2);
-	__raw_writel(tdone | TIMER_READ_SEL_BIT, AK39_TIMER_CTRL2);
+	ctrl2 = __raw_readl(AK39_TIMER5_CTRL2);
+	__raw_writel(ctrl2 | TIMER_READ_SEL_BIT, AK39_TIMER5_CTRL2);
 
-	tcnt = __raw_readl(AK39_TIMER_CTRL1);
+	count = __raw_readl(AK39_TIMER5_CTRL1);
 
-	//recover read mode
-	tdone = __raw_readl(AK39_TIMER_CTRL2);
-	__raw_writel(tdone & (~TIMER_READ_SEL_BIT), AK39_TIMER_CTRL2);
+	ctrl2 = __raw_readl(AK39_TIMER5_CTRL2);
+	__raw_writel(ctrl2 & ~TIMER_READ_SEL_BIT, AK39_TIMER5_CTRL2);
 
-	tdone = TIMER_CNT - tcnt;
+	local_irq_restore(flags);
 
-	if (__raw_readl(AK39_TIMER_CTRL2) & TIMER_STATUS_BIT) {	/* Timer1 has generated interrupt, and not clear */
-
-		/* Reread timer counter */
-		//select read current count mode
-		tdone = __raw_readl(AK39_TIMER_CTRL2);
-		__raw_writel(tdone | TIMER_READ_SEL_BIT, AK39_TIMER_CTRL2);
-
-		tcnt = __raw_readl(AK39_TIMER_CTRL1);
-
-		//recover read mode
-		tdone = __raw_readl(AK39_TIMER_CTRL2);
-		__raw_writel(tdone & (~TIMER_READ_SEL_BIT), AK39_TIMER_CTRL2);
-
-		tdone = TIMER_CNT - tcnt;
-
-		if (tcnt != 0)
-		tdone += TIMER_CNT;
-	}
-
-	return timer_ticks_to_usec(tdone);
+	return (cycle_t)(~count);
 }
 
-static inline void ak39_timer_setup(void)
+/* Same MMIO path as the clocksource, exported to the scheduler. */
+static u32 notrace ak_read_sched_clock(void)
 {
-	unsigned long regval;
+	unsigned long flags;
+	u32 ctrl2, count;
 
-	/* clear timeout puls, reload */
-    regval = __raw_readl(AK39_TIMER_CTRL2);
-    __raw_writel(regval | TIMER_CLEAR_BIT, AK39_TIMER_CTRL2);
+	local_irq_save(flags);
+
+	ctrl2 = __raw_readl(AK39_TIMER5_CTRL2);
+	__raw_writel(ctrl2 | TIMER_READ_SEL_BIT, AK39_TIMER5_CTRL2);
+
+	count = __raw_readl(AK39_TIMER5_CTRL1);
+
+	ctrl2 = __raw_readl(AK39_TIMER5_CTRL2);
+	__raw_writel(ctrl2 & ~TIMER_READ_SEL_BIT, AK39_TIMER5_CTRL2);
+
+	local_irq_restore(flags);
+
+	return ~count;
 }
 
-/*
- * IRQ handler for the timer
- */
-static irqreturn_t ak39_timer_interrupt(int irq, void *dev_id)
+static struct clocksource ak_timer5_cs = {
+	.name	= "ak_timer5 cs",
+	.rating	= 100,
+	.read	= ak_timer5_read,
+	.mask	= CLOCKSOURCE_MASK(32),
+	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+};
+
+static void ak_timer1_set_mode(enum clock_event_mode mode,
+			       struct clock_event_device *dev)
 {
-	if (__raw_readl(AK39_TIMER_CTRL2) & TIMER_STATUS_BIT) {
+	u32 ctrl2;
 
-        ghrtick += TIMER_CNT;
-
-		timer_tick();
-
-		ak39_timer_setup();
+	switch (mode) {
+	case CLOCK_EVT_MODE_PERIODIC:
+		__raw_writel(TIMER_PERIODIC_LOAD, AK39_TIMER1_CTRL1);
+		__raw_writel(TIMER_CTRL2_PERIODIC, AK39_TIMER1_CTRL2);
+		break;
+	case CLOCK_EVT_MODE_ONESHOT:
+		__raw_writel(0xffffffff, AK39_TIMER1_CTRL1);
+		__raw_writel(TIMER_CTRL2_ONESHOT, AK39_TIMER1_CTRL2);
+		break;
+	case CLOCK_EVT_MODE_SHUTDOWN:
+	case CLOCK_EVT_MODE_UNUSED:
+		ctrl2 = __raw_readl(AK39_TIMER1_CTRL2);
+		__raw_writel(ctrl2 & ~TIMER_ENABLE_BIT, AK39_TIMER1_CTRL2);
+		break;
+	case CLOCK_EVT_MODE_RESUME:
+	default:
+		break;
 	}
+}
 
+static int ak_timer1_set_next_event(unsigned long evt,
+				    struct clock_event_device *dev)
+{
+	__raw_writel(evt, AK39_TIMER1_CTRL1);
+	__raw_writel(TIMER_CTRL2_ONESHOT, AK39_TIMER1_CTRL2);
+	return 0;
+}
+
+static struct clock_event_device ak_timer1_ce = {
+	.name		= "ak_timer1 ce",
+	.features	= CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT,
+	.rating		= 100,
+	.irq		= IRQ_TIMER1,
+	.set_next_event	= ak_timer1_set_next_event,
+	.set_mode	= ak_timer1_set_mode,
+};
+
+static irqreturn_t ak39_timer1_interrupt(int irq, void *dev_id)
+{
+	struct clock_event_device *ce = dev_id;
+	u32 ctrl2 = __raw_readl(AK39_TIMER1_CTRL2);
+
+	if (!(ctrl2 & TIMER_STATUS_BIT))
+		return IRQ_NONE;
+
+	ce->event_handler(ce);
+
+	__raw_writel(ctrl2 | TIMER_CLEAR_BIT, AK39_TIMER1_CTRL2);
 	return IRQ_HANDLED;
 }
 
-#if 0
-u_int64_t ak39_gethrtick(void)
-{
-	unsigned long timecnt = 0;
-	unsigned long tdone;
-
-	//select read current count mode
-	tdone = __raw_readl(AK39_TIMER_CTRL2);
-	__raw_writel(tdone | TIMER_READ_SEL_BIT, AK39_TIMER_CTRL2);
-
-	timecnt = __raw_readl(AK39_TIMER_CTRL1);
-
-	//recover read mode
-	tdone = __raw_readl(AK39_TIMER_CTRL2);
-	__raw_writel(tdone & (~TIMER_READ_SEL_BIT), AK39_TIMER_CTRL2);
-
-	timecnt &= (~TIMER_CNT_MASK);
-
-	return (ghrtick + (u_int64_t)(TIMER_CNT-timecnt));
-}
-#endif
-
-static struct irqaction ak39_timer_irq = {
-	.name = "timer tick",
-	.flags = IRQF_DISABLED | IRQF_TIMER | IRQF_IRQPOLL,
-	.handler = ak39_timer_interrupt,
+static struct irqaction ak_timer1_irq = {
+	.name		= "ak_timer1 irq",
+	.flags		= IRQF_DISABLED | IRQF_TIMER | IRQF_IRQPOLL |
+			  IRQF_NO_SUSPEND | IRQF_NO_THREAD,
+	.handler	= ak39_timer1_interrupt,
+	.dev_id		= &ak_timer1_ce,
 };
 
-static void __init ak39_timer_init(void)
+static void __init ak39_sys_timer_init(void)
 {
-	unsigned long timecnt = TIMER_CNT - 1;
+	/* TIMER5 free-running clocksource hardware */
+	__raw_writel(0xffffffff, AK39_TIMER5_CTRL1);
+	__raw_writel(TIMER_CTRL2_PERIODIC, AK39_TIMER5_CTRL2);
 
-    usec_per_tick = timer_mask_usec_ticks(1, 12000000);
+	if (__clocksource_register_scale(&ak_timer5_cs, 1, TIMER_CLK_RATE))
+		pr_err("%s: clocksource register failed for %s\n",
+		       __func__, ak_timer5_cs.name);
 
-	__raw_writel(timecnt, AK39_TIMER_CTRL1);
-	__raw_writel((TIMER_ENABLE_BIT | TIMER_FEED_BIT | (MODE_AUTO_RELOAD_TIMER << 24)), 
-		AK39_TIMER_CTRL2);
+	clockevents_config_and_register(&ak_timer1_ce, TIMER_CLK_RATE,
+					15, 0xffffffff);
 
-	/* setup irq handler for IRQ_TIMER */
-	setup_irq(IRQ_TIMER, &ak39_timer_irq);
-    ghrtick = 0;
+	if (setup_irq(IRQ_TIMER1, &ak_timer1_irq))
+		pr_err("%s: irq register failed for %s\n",
+		       __func__, ak_timer1_irq.name);
+
+	setup_sched_clock(ak_read_sched_clock, 32, TIMER_CLK_RATE);
 }
-
 
 struct sys_timer ak39_timer = {
-	.init		= ak39_timer_init,
-	.offset		= ak39_gettimeoffset,
-	//.resume	= ak39_timer_setup
+	.init	= ak39_sys_timer_init,
 };
-

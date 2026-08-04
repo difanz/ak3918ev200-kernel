@@ -1018,7 +1018,7 @@ config ARCH_AK39
 	select ARCH_REQUIRE_GPIOLIB
 	select CLKDEV_LOOKUP
 #   select WIRELESS_EXT
-	select ARCH_USES_GETTIMEOFFSET
+	select GENERIC_CLOCKEVENTS
 	select ARCH_HAS_CPUFREQ
 	help
 	  Support for Anyka AK39xx series Chips platform.
