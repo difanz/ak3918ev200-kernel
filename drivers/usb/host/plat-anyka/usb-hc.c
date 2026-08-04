@@ -1675,28 +1675,17 @@ akotg_usbhc_hub_control(
 				break;
 			}
 			clear_all_interrupts();
-			period_epfifo = 0;
-			init_epfifo_mapping(&akotg_epfifo_mapping);
-			reset_endpoints();
 
-			/* 50 msec of reset/SE0 signaling, irqs blocked */
+			/* 30 ms SE0 reset pulse + 50 ms status settle timer */
 			/*reset device.*/
-			akotghc->ignore_disconnect = 1;
 			reg8val = hc_readb(USB_REG_POWER);
 			reg8val |= USB_POWER_RESET;
 			hc_writeb(reg8val, USB_REG_POWER);
 			mdelay(30);
 			reg8val &= ~USB_POWER_RESET;
 			hc_writeb(reg8val, USB_REG_POWER);
-			akotghc->ignore_disconnect = 0;
 
 			hc_writeb(0xF7, USB_REG_INTRUSBE);
-
-			hc_index_writeb(0, 0, USB_REG_TXINTERVAL);
-			hc_index_writew(0, 0, USB_REG_TXCSR1);
-			flush_ep0_fifo();
-
-			enable_ep0_interrupt();
 
 			akotghc->port_status |= (1 << USB_PORT_FEAT_RESET);
 			mod_timer(&akotghc->timer, jiffies + msecs_to_jiffies(50));
