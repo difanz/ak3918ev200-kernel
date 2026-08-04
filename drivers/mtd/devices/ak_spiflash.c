@@ -1804,31 +1804,15 @@ static int ak_spiflash_probe(struct spi_device *spi)
 	mutex_init(&flash->lock);
 	spi_set_drvdata(spi, flash);
 
-	/* [4.4] RISK fix: the vendor dereferenced data unconditionally here,
-	 * although the "else info = jedec_probe(spi);" branch above is taken
-	 * precisely when data is NULL or data->type is unset -- a probe with
-	 * no platform data (JEDEC-only autodetection) would NULL-deref.
-	 * PORT-PLAN.md 2K flags this as a RISK site (":1812" in the final
-	 * v3.4.113-prestine tree); default to no multi-wire support when no
-	 * platform data was supplied.
-	 *
-	 * B-prime OF conversion (plan7/STRATEGY2.md V4): boards no longer
-	 * supply flash_platform_data (spi_board_info is gone along with
-	 * arch/arm/mach-ak39), so "data" above is always NULL under DT and
-	 * chip identification always falls to jedec_probe(). bus_width is
-	 * now read from the spif0 DT node's "anyka,bus-width" property
-	 * (arch/arm/boot/dts/ak3918en080_v200.dts), which carries the exact
-	 * same FLASH_BUS_WIDTH_1/2/4WIRE bitmask the board file used to pass
-	 * as platform_data.bus_width -- kept as a bitmask rather than
-	 * switched to the mainline single-value "spi-tx/rx-bus-width"
-	 * bindings so ak_spiflash_cfg_quad_mode()'s existing fallback logic
-	 * (try 4-wire, then 2-wire, then 1-wire) is unchanged. */
 	if (data)
 		flash->bus_width = data->bus_width;
 	else {
-		u32 bw = 0;
+		u8 bw = FLASH_BUS_WIDTH_1WIRE;
 
-		of_property_read_u32(spi->dev.of_node, "anyka,bus-width", &bw);
+		if (spi->mode & (SPI_TX_DUAL | SPI_RX_DUAL))
+			bw |= FLASH_BUS_WIDTH_2WIRE;
+		if (spi->mode & (SPI_TX_QUAD | SPI_RX_QUAD))
+			bw |= FLASH_BUS_WIDTH_4WIRE;
 		flash->bus_width = bw;
 	}
 

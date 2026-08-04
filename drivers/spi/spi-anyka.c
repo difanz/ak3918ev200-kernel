@@ -1470,7 +1470,8 @@ static int  ak_spi_probe(struct platform_device *pdev)
 
 	/* setup the master state. */
 	/* the spi->mode bits understood by this driver: */
-	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_CS_HIGH | SPI_LSB_FIRST;
+	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_CS_HIGH | SPI_LSB_FIRST |
+			     SPI_TX_DUAL | SPI_TX_QUAD | SPI_RX_DUAL | SPI_RX_QUAD;
 #if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
 	master->num_chipselect = 1;
 #endif
