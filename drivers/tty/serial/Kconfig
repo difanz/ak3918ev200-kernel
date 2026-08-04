@@ -1374,4 +1374,20 @@ config SERIAL_AK39_CONSOLE
 	help
 	  Say Y here if you want enable console support on AK39xx serial port.
 
+config SERIAL_GPIO_UART
+	tristate "GPIO serial port support"
+	select SERIAL_CORE
+	depends on ARCH_AK39
+	default n
+	help
+	  AK39 GPIO simulate UART support.
+
+config SERIAL_GPIO_CONSOLE
+	bool "Console on GPIO serial port"
+	depends on SERIAL_GPIO_UART
+	select SERIAL_CORE_CONSOLE
+	help
+          AK39 GPIO simulate UART console support.
+
+
 endmenu

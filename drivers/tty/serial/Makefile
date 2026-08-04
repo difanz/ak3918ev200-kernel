@@ -80,3 +80,5 @@ obj-$(CONFIG_SERIAL_SIRFSOC) += sirfsoc_uart.o
 obj-$(CONFIG_SERIAL_AR933X)   += ar933x_uart.o
 obj-$(CONFIG_SERIAL_EFM32_UART) += efm32-uart.o
 obj-$(CONFIG_SERIAL_AK39_UART)   += ak39_uart.o
+obj-$(CONFIG_SERIAL_GPIO_UART)   += gpio_uart.o
+
