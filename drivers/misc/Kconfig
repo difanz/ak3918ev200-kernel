@@ -521,6 +521,19 @@ config AK_ISP_CHAR
 
 	  If unsure, say N.
 
+comment "user space generic gpio controller"
+config GPIOS_AKCUSTOM
+	tristate "Generic akgpio custom support"
+	depends on ARCH_AK39
+	help
+		This enables anyka's generic GPIO for setting support through user space controller.
+		if you want need to enable this, you can control attribute of akgpio,
+		example dir[in/out], out[high/low], pull[up/down], get gpio level,
+		irq polarity[low/high], request gpio irq and delete irq etc.
+
+		If unsure, say N.
+
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
