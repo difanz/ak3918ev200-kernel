@@ -54,3 +54,4 @@ obj-$(CONFIG_KEYBOARD_XTKBD)		+= xtkbd.o
 obj-$(CONFIG_KEYBOARD_W90P910)		+= w90p910_keypad.o
 obj-$(CONFIG_KEYBOARD_AKKEY)		+= akgpio_keys.o
 obj-$(CONFIG_KEYBOARD_AK_KEYPAD)	+= akmatrix_keypad.o
+obj-$(CONFIG_KEYBOARD_ADKEY)		+= akad-keys.o
