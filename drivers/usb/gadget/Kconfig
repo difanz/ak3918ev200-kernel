@@ -316,6 +316,8 @@ config USB_MV_UDC
 	  USB2.0 OTG controller, which can be configured as high speed or
 	  full speed USB peripheral.
 
+source "drivers/usb/gadget/plat-anyka/Kconfig"
+
 #
 # Controllers available in both integrated and discrete versions
 #
