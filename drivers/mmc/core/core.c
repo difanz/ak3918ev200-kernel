@@ -140,13 +140,25 @@ void mmc_request_done(struct mmc_host *host, struct mmc_request *mrq)
 			cmd->retries = 0;
 	}
 
-	if (err && cmd->retries && !mmc_card_removed(host->card)) {
-		/*
-		 * Request starter must handle retries - see
-		 * mmc_wait_for_req_done().
-		 */
-		if (mrq->done)
-			mrq->done(mrq);
+	if ((err && cmd->retries && !mmc_card_removed(host->card))
+		||(mrq->data && mrq->data->error && mrq->data->retries)) {
+		if (err && cmd->retries) {
+			pr_debug("%s: req failed (CMD%u): %d, retrying...\n",
+				mmc_hostname(host), cmd->opcode, err);
+
+			cmd->retries--;
+			cmd->error = 0;		
+			host->ops->request(host, mrq);
+		} else {
+			printk("%s: data(%s) req failed (CMD%u): %d, retrying(%d)...\n",
+				mmc_hostname(host), 
+				(mrq->data->flags & MMC_DATA_READ) ? "read" : "write",
+				cmd->opcode, mrq->data->error, mrq->data->retries);
+		
+			mrq->data->retries--;
+			mrq->data->error = 0;		
+			host->ops->request(host, mrq);
+		}
 	} else {
 		mmc_should_fail_request(host, mrq);
 
@@ -232,6 +244,7 @@ mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 
 		mrq->cmd->data = mrq->data;
 		mrq->data->error = 0;
+		mrq->data->retries = 3;
 		mrq->data->mrq = mrq;
 		if (mrq->stop) {
 			mrq->data->stop = mrq->stop;
@@ -2005,7 +2018,7 @@ EXPORT_SYMBOL(mmc_detect_card_removed);
 
 void mmc_rescan(struct work_struct *work)
 {
-	static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
+	static const unsigned freqs[] = {300000, 200000, 100000 };
 	struct mmc_host *host =
 		container_of(work, struct mmc_host, detect.work);
 	int i;
