@@ -191,3 +191,8 @@
 	status = "okay";
 };
 
+&isp {
+	clocks = <&gclk_asic 18>, <&gclk_asic 20>;
+	clock-names = "camera", "sensor";
+	mclk-mhz = <27>;
+};
