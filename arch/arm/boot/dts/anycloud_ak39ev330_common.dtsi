@@ -371,6 +371,11 @@
 		status = "disable";
 	};
 
+	battery: battery {
+		compatible = "anyka,ak39-battery";
+		status = "disable";
+	};
+
 	gpiokeys: gpiokeys {
 		compatible = "anyka,ak39ev330-gpiokeys";
 		status = "disable";

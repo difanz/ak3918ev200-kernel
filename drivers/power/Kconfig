@@ -509,6 +509,14 @@ config AXP20X_POWER
 	  This driver provides support for the power supply features of
 	  AXP20x PMIC.
 
+config BATTERY_AK
+	tristate "AK39 battery driver"
+	depends on ARCH_AK
+	help
+	  Say Y here to enable the Anyka AK39 platform battery driver:
+	  ADC-based voltage/capacity plus GPIO-based AC/USB charge
+	  detection.
+
 source "drivers/power/reset/Kconfig"
 
 endif # POWER_SUPPLY
