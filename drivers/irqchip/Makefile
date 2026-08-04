@@ -1,4 +1,5 @@
 obj-$(CONFIG_IRQCHIP)			+= irqchip.o
+obj-$(CONFIG_ARCH_AK)			+= ak_irq.o
 
 obj-$(CONFIG_ARCH_BCM2835)		+= irq-bcm2835.o
 obj-$(CONFIG_ARCH_BCM2835)		+= irq-bcm2836.o
