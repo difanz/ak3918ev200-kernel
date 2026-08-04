@@ -1,5 +1,6 @@
 ifeq ($(CONFIG_OF),y)
 
+dtb-$(CONFIG_MACH_AK39EV330) += EVB_CBD_AK3918EV330_V1.0.0.dtb
 dtb-$(CONFIG_ARCH_ALPINE) += \
 	alpine-db.dtb
 dtb-$(CONFIG_MACH_ASM9260) += \
