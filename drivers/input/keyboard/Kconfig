@@ -719,4 +719,14 @@ config KEYBOARD_BCM
 	  To compile this driver as a module, choose M here: the
 	  module will be called bcm-keypad.
 
+config KEYBOARD_AKKEY
+	tristate "Anyka AK39 GPIO keys support"
+	depends on ARCH_AK
+	help
+	  Say Y here to enable buttons wired to Anyka AK39 GPIO lines with
+	  interrupt support.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called akgpio_keys.
+
 endif
