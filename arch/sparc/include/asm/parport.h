@@ -20,6 +20,7 @@
  */
 #define HAS_DMA
 
+#ifdef CONFIG_PARPORT_PC_FIFO
 static DEFINE_SPINLOCK(dma_spin_lock);
 
 #define claim_dma_lock() \
@@ -30,6 +31,7 @@ static DEFINE_SPINLOCK(dma_spin_lock);
 
 #define release_dma_lock(__flags) \
 	spin_unlock_irqrestore(&dma_spin_lock, __flags);
+#endif
 
 static struct sparc_ebus_info {
 	struct ebus_dma_info info;
@@ -103,7 +105,7 @@ static inline unsigned int get_dma_residue(unsigned int dmanr)
 	return ebus_dma_residue(&sparc_ebus_dmas[dmanr].info);
 }
 
-static int __devinit ecpp_probe(struct platform_device *op)
+static int ecpp_probe(struct platform_device *op)
 {
 	unsigned long base = op->resource[0].start;
 	unsigned long config = op->resource[1].start;
@@ -192,7 +194,7 @@ out_err:
 	return err;
 }
 
-static int __devexit ecpp_remove(struct platform_device *op)
+static int ecpp_remove(struct platform_device *op)
 {
 	struct parport *p = dev_get_drvdata(&op->dev);
 	int slot = p->dma;
@@ -238,11 +240,10 @@ static const struct of_device_id ecpp_match[] = {
 static struct platform_driver ecpp_driver = {
 	.driver = {
 		.name = "ecpp",
-		.owner = THIS_MODULE,
 		.of_match_table = ecpp_match,
 	},
 	.probe			= ecpp_probe,
-	.remove			= __devexit_p(ecpp_remove),
+	.remove			= ecpp_remove,
 };
 
 static int parport_pc_find_nonpci_ports(int autoirq, int autodma)

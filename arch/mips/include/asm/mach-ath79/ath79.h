@@ -29,6 +29,11 @@ enum ath79_soc_type {
 	ATH79_SOC_AR9132,
 	ATH79_SOC_AR9330,
 	ATH79_SOC_AR9331,
+	ATH79_SOC_AR9341,
+	ATH79_SOC_AR9342,
+	ATH79_SOC_AR9344,
+	ATH79_SOC_QCA9556,
+	ATH79_SOC_QCA9558,
 };
 
 extern enum ath79_soc_type ath79_soc;
@@ -75,7 +80,43 @@ static inline int soc_is_ar933x(void)
 		ath79_soc == ATH79_SOC_AR9331);
 }
 
-extern void __iomem *ath79_ddr_base;
+static inline int soc_is_ar9341(void)
+{
+	return (ath79_soc == ATH79_SOC_AR9341);
+}
+
+static inline int soc_is_ar9342(void)
+{
+	return (ath79_soc == ATH79_SOC_AR9342);
+}
+
+static inline int soc_is_ar9344(void)
+{
+	return (ath79_soc == ATH79_SOC_AR9344);
+}
+
+static inline int soc_is_ar934x(void)
+{
+	return soc_is_ar9341() || soc_is_ar9342() || soc_is_ar9344();
+}
+
+static inline int soc_is_qca9556(void)
+{
+	return ath79_soc == ATH79_SOC_QCA9556;
+}
+
+static inline int soc_is_qca9558(void)
+{
+	return ath79_soc == ATH79_SOC_QCA9558;
+}
+
+static inline int soc_is_qca955x(void)
+{
+	return soc_is_qca9556() || soc_is_qca9558();
+}
+
+void ath79_ddr_set_pci_windows(void);
+
 extern void __iomem *ath79_pll_base;
 extern void __iomem *ath79_reset_base;
 
@@ -92,6 +133,7 @@ static inline u32 ath79_pll_rr(unsigned reg)
 static inline void ath79_reset_wr(unsigned reg, u32 val)
 {
 	__raw_writel(val, ath79_reset_base + reg);
+	(void) __raw_readl(ath79_reset_base + reg); /* flush */
 }
 
 static inline u32 ath79_reset_rr(unsigned reg)

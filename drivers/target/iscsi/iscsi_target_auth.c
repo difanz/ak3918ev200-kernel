@@ -1,9 +1,7 @@
 /*******************************************************************************
  * This file houses the main functions for the iSCSI CHAP support
  *
- * \u00a9 Copyright 2007-2011 RisingTide Systems LLC.
- *
- * Licensed to the Linux Foundation under the General Public License (GPL) version 2.
+ * (c) Copyright 2007-2013 Datera, Inc.
  *
  * Author: Nicholas A. Bellinger <nab@linux-iscsi.org>
  *
@@ -24,56 +22,9 @@
 #include <linux/err.h>
 #include <linux/scatterlist.h>
 
-#include "iscsi_target_core.h"
+#include <target/iscsi/iscsi_target_core.h>
 #include "iscsi_target_nego.h"
 #include "iscsi_target_auth.h"
-
-static int chap_string_to_hex(unsigned char *dst, unsigned char *src, int len)
-{
-	int j = DIV_ROUND_UP(len, 2), rc;
-
-	rc = hex2bin(dst, src, j);
-	if (rc < 0)
-		pr_debug("CHAP string contains non hex digit symbols\n");
-
-	dst[j] = '\0';
-	return j;
-}
-
-static void chap_binaryhex_to_asciihex(char *dst, char *src, int src_len)
-{
-	int i;
-
-	for (i = 0; i < src_len; i++) {
-		sprintf(&dst[i*2], "%02x", (int) src[i] & 0xff);
-	}
-}
-
-static void chap_set_random(char *data, int length)
-{
-	long r;
-	unsigned n;
-
-	while (length > 0) {
-		get_random_bytes(&r, sizeof(long));
-		r = r ^ (r >> 8);
-		r = r ^ (r >> 4);
-		n = r & 0x7;
-
-		get_random_bytes(&r, sizeof(long));
-		r = r ^ (r >> 8);
-		r = r ^ (r >> 5);
-		n = (n << 3) | (r & 0x7);
-
-		get_random_bytes(&r, sizeof(long));
-		r = r ^ (r >> 8);
-		r = r ^ (r >> 5);
-		n = (n << 2) | (r & 0x3);
-
-		*data++ = n;
-		length--;
-	}
-}
 
 static void chap_gen_challenge(
 	struct iscsi_conn *conn,
@@ -86,8 +37,8 @@ static void chap_gen_challenge(
 
 	memset(challenge_asciihex, 0, CHAP_CHALLENGE_LENGTH * 2 + 1);
 
-	chap_set_random(chap->challenge, CHAP_CHALLENGE_LENGTH);
-	chap_binaryhex_to_asciihex(challenge_asciihex, chap->challenge,
+	get_random_bytes(chap->challenge, CHAP_CHALLENGE_LENGTH);
+	bin2hex(challenge_asciihex, chap->challenge,
 				CHAP_CHALLENGE_LENGTH);
 	/*
 	 * Set CHAP_C, and copy the generated challenge into c_str.
@@ -99,6 +50,40 @@ static void chap_gen_challenge(
 			challenge_asciihex);
 }
 
+static int chap_check_algorithm(const char *a_str)
+{
+	char *tmp, *orig, *token;
+
+	tmp = kstrdup(a_str, GFP_KERNEL);
+	if (!tmp) {
+		pr_err("Memory allocation failed for CHAP_A temporary buffer\n");
+		return CHAP_DIGEST_UNKNOWN;
+	}
+	orig = tmp;
+
+	token = strsep(&tmp, "=");
+	if (!token)
+		goto out;
+
+	if (strcmp(token, "CHAP_A")) {
+		pr_err("Unable to locate CHAP_A key\n");
+		goto out;
+	}
+	while (token) {
+		token = strsep(&tmp, ",");
+		if (!token)
+			goto out;
+
+		if (!strcmp(token, "5")) {
+			pr_debug("Selected MD5 Algorithm\n");
+			kfree(orig);
+			return CHAP_DIGEST_MD5;
+		}
+	}
+out:
+	kfree(orig);
+	return CHAP_DIGEST_UNKNOWN;
+}
 
 static struct iscsi_chap *chap_server_open(
 	struct iscsi_conn *conn,
@@ -107,6 +92,7 @@ static struct iscsi_chap *chap_server_open(
 	char *aic_str,
 	unsigned int *aic_len)
 {
+	int ret;
 	struct iscsi_chap *chap;
 
 	if (!(auth->naf_flags & NAF_USERID_SET) ||
@@ -121,25 +107,28 @@ static struct iscsi_chap *chap_server_open(
 		return NULL;
 
 	chap = conn->auth_protocol;
-	/*
-	 * We only support MD5 MDA presently.
-	 */
-	if (strncmp(a_str, "CHAP_A=5", 8)) {
-		pr_err("CHAP_A is not MD5.\n");
+	ret = chap_check_algorithm(a_str);
+	switch (ret) {
+	case CHAP_DIGEST_MD5:
+		pr_debug("[server] Got CHAP_A=5\n");
+		/*
+		 * Send back CHAP_A set to MD5.
+		*/
+		*aic_len = sprintf(aic_str, "CHAP_A=5");
+		*aic_len += 1;
+		chap->digest_type = CHAP_DIGEST_MD5;
+		pr_debug("[server] Sending CHAP_A=%d\n", chap->digest_type);
+		break;
+	case CHAP_DIGEST_UNKNOWN:
+	default:
+		pr_err("Unsupported CHAP_A value\n");
 		return NULL;
 	}
-	pr_debug("[server] Got CHAP_A=5\n");
-	/*
-	 * Send back CHAP_A set to MD5.
-	 */
-	*aic_len = sprintf(aic_str, "CHAP_A=5");
-	*aic_len += 1;
-	chap->digest_type = CHAP_DIGEST_MD5;
-	pr_debug("[server] Sending CHAP_A=%d\n", chap->digest_type);
+
 	/*
 	 * Set Identifier.
 	 */
-	chap->id = ISCSI_TPG_C(conn)->tpg_chap_id++;
+	chap->id = conn->tpg->tpg_chap_id++;
 	*aic_len += sprintf(aic_str + *aic_len, "CHAP_I=%d", chap->id);
 	*aic_len += 1;
 	pr_debug("[server] Sending CHAP_I=%d\n", chap->id);
@@ -164,7 +153,6 @@ static int chap_server_compute_md5(
 	char *nr_out_ptr,
 	unsigned int *nr_out_len)
 {
-	char *endptr;
 	unsigned long id;
 	unsigned char id_as_uchar;
 	unsigned char digest[MD5_SIGNATURE_SIZE];
@@ -232,9 +220,16 @@ static int chap_server_compute_md5(
 		pr_err("Could not find CHAP_R.\n");
 		goto out;
 	}
+	if (strlen(chap_r) != MD5_SIGNATURE_SIZE * 2) {
+		pr_err("Malformed CHAP_R\n");
+		goto out;
+	}
+	if (hex2bin(client_digest, chap_r, MD5_SIGNATURE_SIZE) < 0) {
+		pr_err("Malformed CHAP_R\n");
+		goto out;
+	}
 
 	pr_debug("[server] Got CHAP_R=%s\n", chap_r);
-	chap_string_to_hex(client_digest, chap_r, strlen(chap_r));
 
 	tfm = crypto_alloc_hash("md5", 0, CRYPTO_ALG_ASYNC);
 	if (IS_ERR(tfm)) {
@@ -283,7 +278,7 @@ static int chap_server_compute_md5(
 	}
 	crypto_free_hash(tfm);
 
-	chap_binaryhex_to_asciihex(response, server_digest, MD5_SIGNATURE_SIZE);
+	bin2hex(response, server_digest, MD5_SIGNATURE_SIZE);
 	pr_debug("[server] MD5 Server Digest: %s\n", response);
 
 	if (memcmp(server_digest, client_digest, MD5_SIGNATURE_SIZE) != 0) {
@@ -310,9 +305,14 @@ static int chap_server_compute_md5(
 	}
 
 	if (type == HEX)
-		id = simple_strtoul(&identifier[2], &endptr, 0);
+		ret = kstrtoul(&identifier[2], 0, &id);
 	else
-		id = simple_strtoul(identifier, &endptr, 0);
+		ret = kstrtoul(identifier, 0, &id);
+
+	if (ret < 0) {
+		pr_err("kstrtoul() failed for CHAP identifier: %d\n", ret);
+		goto out;
+	}
 	if (id > 255) {
 		pr_err("chap identifier: %lu greater than 255\n", id);
 		goto out;
@@ -334,13 +334,20 @@ static int chap_server_compute_md5(
 		pr_err("Could not find CHAP_C.\n");
 		goto out;
 	}
-	pr_debug("[server] Got CHAP_C=%s\n", challenge);
-	challenge_len = chap_string_to_hex(challenge_binhex, challenge,
-				strlen(challenge));
+	challenge_len = DIV_ROUND_UP(strlen(challenge), 2);
 	if (!challenge_len) {
 		pr_err("Unable to convert incoming challenge\n");
 		goto out;
 	}
+	if (challenge_len > 1024) {
+		pr_err("CHAP_C exceeds maximum binary size of 1024 bytes\n");
+		goto out;
+	}
+	if (hex2bin(challenge_binhex, challenge, challenge_len) < 0) {
+		pr_err("Malformed CHAP_C\n");
+		goto out;
+	}
+	pr_debug("[server] Got CHAP_C=%s\n", challenge);
 	/*
 	 * During mutual authentication, the CHAP_C generated by the
 	 * initiator must not match the original CHAP_C generated by
@@ -415,7 +422,7 @@ static int chap_server_compute_md5(
 	/*
 	 * Convert response from binary hex to ascii hext.
 	 */
-	chap_binaryhex_to_asciihex(response, digest, MD5_SIGNATURE_SIZE);
+	bin2hex(response, digest, MD5_SIGNATURE_SIZE);
 	*nr_out_len += sprintf(nr_out_ptr + *nr_out_len, "CHAP_R=0x%s",
 			response);
 	*nr_out_len += 1;

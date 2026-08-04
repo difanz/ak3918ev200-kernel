@@ -27,16 +27,15 @@
 
 #define BLANK_SLOT		4094
 
-static int amixer_master(struct rsc *rsc)
+static void amixer_master(struct rsc *rsc)
 {
 	rsc->conj = 0;
-	return rsc->idx = container_of(rsc, struct amixer, rsc)->idx[0];
+	rsc->idx = container_of(rsc, struct amixer, rsc)->idx[0];
 }
 
-static int amixer_next_conj(struct rsc *rsc)
+static void amixer_next_conj(struct rsc *rsc)
 {
 	rsc->conj++;
-	return container_of(rsc, struct amixer, rsc)->idx[rsc->conj];
 }
 
 static int amixer_index(const struct rsc *rsc)
@@ -49,7 +48,7 @@ static int amixer_output_slot(const struct rsc *rsc)
 	return (amixer_index(rsc) << 4) + 0x4;
 }
 
-static struct rsc_ops amixer_basic_rsc_ops = {
+static const struct rsc_ops amixer_basic_rsc_ops = {
 	.master		= amixer_master,
 	.next_conj	= amixer_next_conj,
 	.index		= amixer_index,
@@ -186,7 +185,7 @@ static int amixer_setup(struct amixer *amixer, struct rsc *input,
 	return 0;
 }
 
-static struct amixer_rsc_ops amixer_ops = {
+static const struct amixer_rsc_ops amixer_ops = {
 	.set_input		= amixer_set_input,
 	.set_invalid_squash	= amixer_set_invalid_squash,
 	.set_scale		= amixer_set_y,
@@ -258,7 +257,8 @@ static int get_amixer_rsc(struct amixer_mgr *mgr,
 	}
 	spin_unlock_irqrestore(&mgr->mgr_lock, flags);
 	if (err) {
-		printk(KERN_ERR "ctxfi: Can't meet AMIXER resource request!\n");
+		dev_err(mgr->card->dev,
+			"Can't meet AMIXER resource request!\n");
 		goto error;
 	}
 
@@ -296,7 +296,7 @@ static int put_amixer_rsc(struct amixer_mgr *mgr, struct amixer *amixer)
 	return 0;
 }
 
-int amixer_mgr_create(void *hw, struct amixer_mgr **ramixer_mgr)
+int amixer_mgr_create(struct hw *hw, struct amixer_mgr **ramixer_mgr)
 {
 	int err;
 	struct amixer_mgr *amixer_mgr;
@@ -314,6 +314,7 @@ int amixer_mgr_create(void *hw, struct amixer_mgr **ramixer_mgr)
 
 	amixer_mgr->get_amixer = get_amixer_rsc;
 	amixer_mgr->put_amixer = put_amixer_rsc;
+	amixer_mgr->card = hw->card;
 
 	*ramixer_mgr = amixer_mgr;
 
@@ -333,16 +334,15 @@ int amixer_mgr_destroy(struct amixer_mgr *amixer_mgr)
 
 /* SUM resource management */
 
-static int sum_master(struct rsc *rsc)
+static void sum_master(struct rsc *rsc)
 {
 	rsc->conj = 0;
-	return rsc->idx = container_of(rsc, struct sum, rsc)->idx[0];
+	rsc->idx = container_of(rsc, struct sum, rsc)->idx[0];
 }
 
-static int sum_next_conj(struct rsc *rsc)
+static void sum_next_conj(struct rsc *rsc)
 {
 	rsc->conj++;
-	return container_of(rsc, struct sum, rsc)->idx[rsc->conj];
 }
 
 static int sum_index(const struct rsc *rsc)
@@ -355,7 +355,7 @@ static int sum_output_slot(const struct rsc *rsc)
 	return (sum_index(rsc) << 4) + 0xc;
 }
 
-static struct rsc_ops sum_basic_rsc_ops = {
+static const struct rsc_ops sum_basic_rsc_ops = {
 	.master		= sum_master,
 	.next_conj	= sum_next_conj,
 	.index		= sum_index,
@@ -411,7 +411,8 @@ static int get_sum_rsc(struct sum_mgr *mgr,
 	}
 	spin_unlock_irqrestore(&mgr->mgr_lock, flags);
 	if (err) {
-		printk(KERN_ERR "ctxfi: Can't meet SUM resource request!\n");
+		dev_err(mgr->card->dev,
+			"Can't meet SUM resource request!\n");
 		goto error;
 	}
 
@@ -449,7 +450,7 @@ static int put_sum_rsc(struct sum_mgr *mgr, struct sum *sum)
 	return 0;
 }
 
-int sum_mgr_create(void *hw, struct sum_mgr **rsum_mgr)
+int sum_mgr_create(struct hw *hw, struct sum_mgr **rsum_mgr)
 {
 	int err;
 	struct sum_mgr *sum_mgr;
@@ -467,6 +468,7 @@ int sum_mgr_create(void *hw, struct sum_mgr **rsum_mgr)
 
 	sum_mgr->get_sum = get_sum_rsc;
 	sum_mgr->put_sum = put_sum_rsc;
+	sum_mgr->card = hw->card;
 
 	*rsum_mgr = sum_mgr;
 

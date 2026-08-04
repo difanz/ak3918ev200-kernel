@@ -45,6 +45,9 @@
 /* mount time flag to disable journaling to disk */
 #define JFS_NOINTEGRITY 0x00000040
 
+/* mount time flag to enable TRIM to ssd disks */
+#define JFS_DISCARD     0x00000080
+
 /* commit option */
 #define	JFS_COMMIT	0x00000f00	/* commit option mask */
 #define	JFS_GROUPCOMMIT	0x00000100	/* group (of 1) commit */
@@ -278,5 +281,6 @@
 				 * fsck() must be run to repair
 				 */
 #define	FM_EXTENDFS 0x00000008	/* file system extendfs() in progress */
+#define	FM_STATE_MAX 0x0000000f	/* max value of s_state */
 
 #endif				/* _H_JFS_FILSYS */

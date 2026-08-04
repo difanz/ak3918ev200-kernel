@@ -13,7 +13,6 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
-#include <linux/init.h>
 #include <linux/types.h>
 #include <linux/bitops.h>
 #include <linux/platform_device.h>
@@ -75,7 +74,7 @@ static void mpu_port(struct net_device *dev, int c, dma_addr_t x)
 }
 
 
-static int __devinit sni_82596_probe(struct platform_device *dev)
+static int sni_82596_probe(struct platform_device *dev)
 {
 	struct	net_device *netdevice;
 	struct i596_private *lp;
@@ -123,9 +122,10 @@ static int __devinit sni_82596_probe(struct platform_device *dev)
 	netdevice->dev_addr[5] = readb(eth_addr + 0x06);
 	iounmap(eth_addr);
 
-	if (!netdevice->irq) {
+	if (netdevice->irq < 0) {
 		printk(KERN_ERR "%s: IRQ not found for i82596 at 0x%lx\n",
 			__FILE__, netdevice->base_addr);
+		retval = netdevice->irq;
 		goto probe_failed;
 	}
 
@@ -147,7 +147,7 @@ probe_failed_free_mpu:
 	return retval;
 }
 
-static int __devexit sni_82596_driver_remove(struct platform_device *pdev)
+static int sni_82596_driver_remove(struct platform_device *pdev)
 {
 	struct net_device *dev = platform_get_drvdata(pdev);
 	struct i596_private *lp = netdev_priv(dev);
@@ -163,14 +163,13 @@ static int __devexit sni_82596_driver_remove(struct platform_device *pdev)
 
 static struct platform_driver sni_82596_driver = {
 	.probe	= sni_82596_probe,
-	.remove	= __devexit_p(sni_82596_driver_remove),
+	.remove	= sni_82596_driver_remove,
 	.driver	= {
 		.name	= sni_82596_string,
-		.owner	= THIS_MODULE,
 	},
 };
 
-static int __devinit sni_82596_init(void)
+static int sni_82596_init(void)
 {
 	printk(KERN_INFO SNI_82596_DRIVER_VERSION "\n");
 	return platform_driver_register(&sni_82596_driver);

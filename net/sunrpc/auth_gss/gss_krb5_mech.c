@@ -45,7 +45,9 @@
 #include <linux/crypto.h>
 #include <linux/sunrpc/gss_krb5_enctypes.h>
 
-#ifdef RPC_DEBUG
+#include "auth_gss_internal.h"
+
+#if IS_ENABLED(CONFIG_SUNRPC_DEBUG)
 # define RPCDBG_FACILITY	RPCDBG_AUTH
 #endif
 
@@ -184,35 +186,6 @@ get_gss_krb5_enctype(int etype)
 		if (supported_gss_krb5_enctypes[i].etype == etype)
 			return &supported_gss_krb5_enctypes[i];
 	return NULL;
-}
-
-static const void *
-simple_get_bytes(const void *p, const void *end, void *res, int len)
-{
-	const void *q = (const void *)((const char *)p + len);
-	if (unlikely(q > end || q < p))
-		return ERR_PTR(-EFAULT);
-	memcpy(res, p, len);
-	return q;
-}
-
-static const void *
-simple_get_netobj(const void *p, const void *end, struct xdr_netobj *res)
-{
-	const void *q;
-	unsigned int len;
-
-	p = simple_get_bytes(p, end, &len, sizeof(len));
-	if (IS_ERR(p))
-		return p;
-	q = (const void *)((const char *)p + len);
-	if (unlikely(q > end || q < p))
-		return ERR_PTR(-EFAULT);
-	res->data = kmemdup(p, len, GFP_NOFS);
-	if (unlikely(res->data == NULL))
-		return ERR_PTR(-ENOMEM);
-	res->len = len;
-	return q;
 }
 
 static inline const void *
@@ -624,7 +597,7 @@ gss_import_v2_context(const void *p, const void *end, struct krb5_ctx *ctx,
 	ctx->seq_send = ctx->seq_send64;
 	if (ctx->seq_send64 != ctx->seq_send) {
 		dprintk("%s: seq_send64 %lx, seq_send %x overflow?\n", __func__,
-			(long unsigned)ctx->seq_send64, ctx->seq_send);
+			(unsigned long)ctx->seq_send64, ctx->seq_send);
 		p = ERR_PTR(-EINVAL);
 		goto out_err;
 	}
@@ -679,6 +652,7 @@ out_err:
 static int
 gss_import_sec_context_kerberos(const void *p, size_t len,
 				struct gss_ctx *ctx_id,
+				time_t *endtime,
 				gfp_t gfp_mask)
 {
 	const void *end = (const void *)((const char *)p + len);
@@ -694,9 +668,11 @@ gss_import_sec_context_kerberos(const void *p, size_t len,
 	else
 		ret = gss_import_v2_context(p, end, ctx, gfp_mask);
 
-	if (ret == 0)
+	if (ret == 0) {
 		ctx_id->internal_ctx_id = ctx;
-	else
+		if (endtime)
+			*endtime = ctx->endtime;
+	} else
 		kfree(ctx);
 
 	dprintk("RPC:       %s: returning %d\n", __func__, ret);
@@ -729,16 +705,19 @@ static const struct gss_api_ops gss_kerberos_ops = {
 static struct pf_desc gss_kerberos_pfs[] = {
 	[0] = {
 		.pseudoflavor = RPC_AUTH_GSS_KRB5,
+		.qop = GSS_C_QOP_DEFAULT,
 		.service = RPC_GSS_SVC_NONE,
 		.name = "krb5",
 	},
 	[1] = {
 		.pseudoflavor = RPC_AUTH_GSS_KRB5I,
+		.qop = GSS_C_QOP_DEFAULT,
 		.service = RPC_GSS_SVC_INTEGRITY,
 		.name = "krb5i",
 	},
 	[2] = {
 		.pseudoflavor = RPC_AUTH_GSS_KRB5P,
+		.qop = GSS_C_QOP_DEFAULT,
 		.service = RPC_GSS_SVC_PRIVACY,
 		.name = "krb5p",
 	},
@@ -750,11 +729,12 @@ MODULE_ALIAS("rpc-auth-gss-krb5p");
 MODULE_ALIAS("rpc-auth-gss-390003");
 MODULE_ALIAS("rpc-auth-gss-390004");
 MODULE_ALIAS("rpc-auth-gss-390005");
+MODULE_ALIAS("rpc-auth-gss-1.2.840.113554.1.2.2");
 
 static struct gss_api_mech gss_kerberos_mech = {
 	.gm_name	= "krb5",
 	.gm_owner	= THIS_MODULE,
-	.gm_oid		= {9, (void *)"\x2a\x86\x48\x86\xf7\x12\x01\x02\x02"},
+	.gm_oid		= { 9, "\x2a\x86\x48\x86\xf7\x12\x01\x02\x02" },
 	.gm_ops		= &gss_kerberos_ops,
 	.gm_pf_num	= ARRAY_SIZE(gss_kerberos_pfs),
 	.gm_pfs		= gss_kerberos_pfs,

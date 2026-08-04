@@ -31,6 +31,8 @@
  * IN THE SOFTWARE.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/unistd.h>
 #include <linux/errno.h>
 #include <linux/types.h>
@@ -44,9 +46,11 @@
 #include <linux/rwsem.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <asm/xen/hypervisor.h>
 #include <xen/xenbus.h>
 #include <xen/xen.h>
 #include "xenbus_comms.h"
+#include "xenbus_probe.h"
 
 struct xs_stored_msg {
 	struct list_head list;
@@ -128,15 +132,37 @@ static int get_error(const char *errorstring)
 
 	for (i = 0; strcmp(errorstring, xsd_errors[i].errstring) != 0; i++) {
 		if (i == ARRAY_SIZE(xsd_errors) - 1) {
-			printk(KERN_WARNING
-			       "XENBUS xen store gave: unknown error %s",
-			       errorstring);
+			pr_warn("xen store gave: unknown error %s\n",
+				errorstring);
 			return EINVAL;
 		}
 	}
 	return xsd_errors[i].errnum;
 }
 
+static bool xenbus_ok(void)
+{
+	switch (xen_store_domain_type) {
+	case XS_LOCAL:
+		switch (system_state) {
+		case SYSTEM_POWER_OFF:
+		case SYSTEM_RESTART:
+		case SYSTEM_HALT:
+			return false;
+		default:
+			break;
+		}
+		return true;
+	case XS_PV:
+	case XS_HVM:
+		/* FIXME: Could check that the remote domain is alive,
+		 * but it is normally initial domain. */
+		return true;
+	default:
+		break;
+	}
+	return false;
+}
 static void *read_reply(enum xsd_sockmsg_type *type, unsigned int *len)
 {
 	struct xs_stored_msg *msg;
@@ -146,9 +172,20 @@ static void *read_reply(enum xsd_sockmsg_type *type, unsigned int *len)
 
 	while (list_empty(&xs_state.reply_list)) {
 		spin_unlock(&xs_state.reply_lock);
-		/* XXX FIXME: Avoid synchronous wait for response here. */
-		wait_event(xs_state.reply_waitq,
-			   !list_empty(&xs_state.reply_list));
+		if (xenbus_ok())
+			/* XXX FIXME: Avoid synchronous wait for response here. */
+			wait_event_timeout(xs_state.reply_waitq,
+					   !list_empty(&xs_state.reply_list),
+					   msecs_to_jiffies(500));
+		else {
+			/*
+			 * If we are in the process of being shut-down there is
+			 * no point of trying to contact XenBus - it is either
+			 * killed (xenstored application) or the other domain
+			 * has been killed or is unreachable.
+			 */
+			return ERR_PTR(-EIO);
+		}
 		spin_lock(&xs_state.reply_lock);
 	}
 
@@ -271,10 +308,8 @@ static void *xs_talkv(struct xenbus_transaction t,
 	}
 
 	if (msg.type != type) {
-		if (printk_ratelimit())
-			printk(KERN_WARNING
-			       "XENBUS unexpected type [%d], expected [%d]\n",
-			       msg.type, type);
+		pr_warn_ratelimited("unexpected type [%d], expected [%d]\n",
+				    msg.type, type);
 		kfree(ret);
 		return ERR_PTR(-EINVAL);
 	}
@@ -617,6 +652,45 @@ static struct xenbus_watch *find_watch(const char *token)
 
 	return NULL;
 }
+/*
+ * Certain older XenBus toolstack cannot handle reading values that are
+ * not populated. Some Xen 3.4 installation are incapable of doing this
+ * so if we are running on anything older than 4 do not attempt to read
+ * control/platform-feature-xs_reset_watches.
+ */
+static bool xen_strict_xenbus_quirk(void)
+{
+#ifdef CONFIG_X86
+	uint32_t eax, ebx, ecx, edx, base;
+
+	base = xen_cpuid_base();
+	cpuid(base + 1, &eax, &ebx, &ecx, &edx);
+
+	if ((eax >> 16) < 4)
+		return true;
+#endif
+	return false;
+
+}
+static void xs_reset_watches(void)
+{
+	int err, supported = 0;
+
+	if (!xen_hvm_domain() || xen_initial_domain())
+		return;
+
+	if (xen_strict_xenbus_quirk())
+		return;
+
+	err = xenbus_scanf(XBT_NIL, "control",
+			"platform-feature-xs_reset_watches", "%d", &supported);
+	if (err != 1 || !supported)
+		return;
+
+	err = xs_error(xs_single(XBT_NIL, XS_RESET_WATCHES, "", NULL));
+	if (err && err != -EEXIST)
+		pr_warn("xs_reset_watches failed: %d\n", err);
+}
 
 /* Register callback to watch this node. */
 int register_xenbus_watch(struct xenbus_watch *watch)
@@ -626,6 +700,8 @@ int register_xenbus_watch(struct xenbus_watch *watch)
 	int err;
 
 	sprintf(token, "%lX", (long)watch);
+
+	watch->nr_pending = 0;
 
 	down_read(&xs_state.watch_mutex);
 
@@ -665,9 +741,7 @@ void unregister_xenbus_watch(struct xenbus_watch *watch)
 
 	err = xs_unwatch(watch->node, token);
 	if (err)
-		printk(KERN_WARNING
-		       "XENBUS Failed to release watch %s: %i\n",
-		       watch->node, err);
+		pr_warn("Failed to release watch %s: %i\n", watch->node, err);
 
 	up_read(&xs_state.watch_mutex);
 
@@ -678,12 +752,15 @@ void unregister_xenbus_watch(struct xenbus_watch *watch)
 
 	/* Cancel pending watch events. */
 	spin_lock(&watch_events_lock);
-	list_for_each_entry_safe(msg, tmp, &watch_events, list) {
-		if (msg->u.watch.handle != watch)
-			continue;
-		list_del(&msg->list);
-		kfree(msg->u.watch.vec);
-		kfree(msg);
+	if (watch->nr_pending) {
+		list_for_each_entry_safe(msg, tmp, &watch_events, list) {
+			if (msg->u.watch.handle != watch)
+				continue;
+			list_del(&msg->list);
+			kfree(msg->u.watch.vec);
+			kfree(msg);
+		}
+		watch->nr_pending = 0;
 	}
 	spin_unlock(&watch_events_lock);
 
@@ -730,7 +807,6 @@ void xs_suspend_cancel(void)
 
 static int xenwatch_thread(void *unused)
 {
-	struct list_head *ent;
 	struct xs_stored_msg *msg;
 
 	for (;;) {
@@ -743,13 +819,15 @@ static int xenwatch_thread(void *unused)
 		mutex_lock(&xenwatch_mutex);
 
 		spin_lock(&watch_events_lock);
-		ent = watch_events.next;
-		if (ent != &watch_events)
-			list_del(ent);
+		msg = list_first_entry_or_null(&watch_events,
+				struct xs_stored_msg, list);
+		if (msg) {
+			list_del(&msg->list);
+			msg->u.watch.handle->nr_pending--;
+		}
 		spin_unlock(&watch_events_lock);
 
-		if (ent != &watch_events) {
-			msg = list_entry(ent, struct xs_stored_msg, list);
+		if (msg) {
 			msg->u.watch.handle->callback(
 				msg->u.watch.handle,
 				(const char **)msg->u.watch.vec,
@@ -831,9 +909,15 @@ static int process_msg(void)
 		spin_lock(&watches_lock);
 		msg->u.watch.handle = find_watch(
 			msg->u.watch.vec[XS_WATCH_TOKEN]);
-		if (msg->u.watch.handle != NULL) {
+		if (msg->u.watch.handle != NULL &&
+				(!msg->u.watch.handle->will_handle ||
+				 msg->u.watch.handle->will_handle(
+					 msg->u.watch.handle,
+					 (const char **)msg->u.watch.vec,
+					 msg->u.watch.vec_size))) {
 			spin_lock(&watch_events_lock);
 			list_add_tail(&msg->list, &watch_events);
+			msg->u.watch.handle->nr_pending++;
 			wake_up(&watch_events_waitq);
 			spin_unlock(&watch_events_lock);
 		} else {
@@ -861,8 +945,7 @@ static int xenbus_thread(void *unused)
 	for (;;) {
 		err = process_msg();
 		if (err)
-			printk(KERN_WARNING "XENBUS error %d while reading "
-			       "message\n", err);
+			pr_warn("error %d while reading message\n", err);
 		if (kthread_should_stop())
 			break;
 	}
@@ -899,6 +982,9 @@ int xs_init(void)
 	task = kthread_run(xenbus_thread, NULL, "xenbus");
 	if (IS_ERR(task))
 		return PTR_ERR(task);
+
+	/* shutdown watches for kexec boot */
+	xs_reset_watches();
 
 	return 0;
 }

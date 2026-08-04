@@ -1,6 +1,4 @@
 /*
- *  drivers/s390/char/sclp_config.c
- *
  *    Copyright IBM Corp. 2007
  *    Author(s): Heiko Carstens <heiko.carstens@de.ibm.com>
  */
@@ -34,7 +32,7 @@ static void sclp_cpu_capability_notify(struct work_struct *work)
 	struct device *dev;
 
 	s390_adjust_jiffies();
-	pr_warning("cpu capability changed.\n");
+	pr_info("CPU capability may have changed\n");
 	get_online_cpus();
 	for_each_online_cpu(cpu) {
 		dev = get_cpu_device(cpu);
@@ -45,7 +43,9 @@ static void sclp_cpu_capability_notify(struct work_struct *work)
 
 static void __ref sclp_cpu_change_notify(struct work_struct *work)
 {
+	lock_device_hotplug();
 	smp_rescan_cpus();
+	unlock_device_hotplug();
 }
 
 static void sclp_conf_receiver_fn(struct evbuf_header *evbuf)

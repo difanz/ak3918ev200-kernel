@@ -13,6 +13,7 @@
 #ifndef _ASM_SYSCALL_H
 #define _ASM_SYSCALL_H	1
 
+#include <uapi/linux/audit.h>
 #include <linux/sched.h>
 #include <linux/err.h>
 
@@ -34,7 +35,7 @@ static inline void syscall_rollback(struct task_struct *task,
 static inline long syscall_get_error(struct task_struct *task,
 				     struct pt_regs *regs)
 {
-	return regs->r10 == -1 ? regs->r8:0;
+	return regs->r10 == -1 ? -regs->r8:0;
 }
 
 static inline long syscall_get_return_value(struct task_struct *task,
@@ -78,5 +79,10 @@ static inline void syscall_set_arguments(struct task_struct *task,
 	BUG_ON(i + n > 6);
 
 	ia64_syscall_get_set_arguments(task, regs, i, n, args, 1);
+}
+
+static inline int syscall_get_arch(void)
+{
+	return AUDIT_ARCH_IA64;
 }
 #endif	/* _ASM_SYSCALL_H */

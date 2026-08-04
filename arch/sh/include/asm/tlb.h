@@ -2,7 +2,7 @@
 #define __ASM_SH_TLB_H
 
 #ifdef CONFIG_SUPERH64
-# include "tlb_64.h"
+# include <asm/tlb_64.h>
 #endif
 
 #ifndef __ASSEMBLY__
@@ -36,10 +36,12 @@ static inline void init_tlb_gather(struct mmu_gather *tlb)
 }
 
 static inline void
-tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm, unsigned int full_mm_flush)
+tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm, unsigned long start, unsigned long end)
 {
 	tlb->mm = mm;
-	tlb->fullmm = full_mm_flush;
+	tlb->start = start;
+	tlb->end = end;
+	tlb->fullmm = !(start | (end+1));
 
 	init_tlb_gather(tlb);
 }
@@ -63,6 +65,16 @@ tlb_remove_tlb_entry(struct mmu_gather *tlb, pte_t *ptep, unsigned long address)
 		tlb->end = address + PAGE_SIZE;
 }
 
+static inline void
+tlb_flush_pmd_range(struct mmu_gather *tlb, unsigned long address,
+		    unsigned long size)
+{
+	if (tlb->start > address)
+		tlb->start = address;
+	if (tlb->end < address + size)
+		tlb->end = address + size;
+}
+
 /*
  * In the case of tlb vma handling, we can optimise these away in the
  * case where we're doing a full MM flush.  When we're doing a munmap,
@@ -82,6 +94,14 @@ tlb_end_vma(struct mmu_gather *tlb, struct vm_area_struct *vma)
 		flush_tlb_range(vma, tlb->start, tlb->end);
 		init_tlb_gather(tlb);
 	}
+}
+
+static inline void tlb_flush_mmu_tlbonly(struct mmu_gather *tlb)
+{
+}
+
+static inline void tlb_flush_mmu_free(struct mmu_gather *tlb)
+{
 }
 
 static inline void tlb_flush_mmu(struct mmu_gather *tlb)

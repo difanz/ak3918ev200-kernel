@@ -22,7 +22,6 @@
 #include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/serio.h>
-#include <linux/init.h>
 #include <linux/ctype.h>
 
 #define DRIVER_DESC	"Elo serial touchscreen driver"
@@ -346,8 +345,10 @@ static int elo_connect(struct serio *serio, struct serio_driver *drv)
 	switch (elo->id) {
 
 	case 0: /* 10-byte protocol */
-		if (elo_setup_10(elo))
+		if (elo_setup_10(elo)) {
+			err = -EIO;
 			goto fail3;
+		}
 
 		break;
 
@@ -405,19 +406,4 @@ static struct serio_driver elo_drv = {
 	.disconnect	= elo_disconnect,
 };
 
-/*
- * The functions for inserting/removing us as a module.
- */
-
-static int __init elo_init(void)
-{
-	return serio_register_driver(&elo_drv);
-}
-
-static void __exit elo_exit(void)
-{
-	serio_unregister_driver(&elo_drv);
-}
-
-module_init(elo_init);
-module_exit(elo_exit);
+module_serio_driver(elo_drv);

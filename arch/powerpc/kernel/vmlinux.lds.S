@@ -72,6 +72,60 @@ SECTIONS
 	/* Read-only data */
 	RODATA
 
+#ifdef CONFIG_PPC64
+	. = ALIGN(8);
+	__stf_entry_barrier_fixup : AT(ADDR(__stf_entry_barrier_fixup) - LOAD_OFFSET) {
+		__start___stf_entry_barrier_fixup = .;
+		*(__stf_entry_barrier_fixup)
+		__stop___stf_entry_barrier_fixup = .;
+	}
+
+	. = ALIGN(8);
+	__uaccess_flush_fixup : AT(ADDR(__uaccess_flush_fixup) - LOAD_OFFSET) {
+		__start___uaccess_flush_fixup = .;
+		*(__uaccess_flush_fixup)
+		__stop___uaccess_flush_fixup = .;
+	}
+
+	. = ALIGN(8);
+	__entry_flush_fixup : AT(ADDR(__entry_flush_fixup) - LOAD_OFFSET) {
+		__start___entry_flush_fixup = .;
+		*(__entry_flush_fixup)
+		__stop___entry_flush_fixup = .;
+	}
+
+	. = ALIGN(8);
+	__stf_exit_barrier_fixup : AT(ADDR(__stf_exit_barrier_fixup) - LOAD_OFFSET) {
+		__start___stf_exit_barrier_fixup = .;
+		*(__stf_exit_barrier_fixup)
+		__stop___stf_exit_barrier_fixup = .;
+	}
+
+	. = ALIGN(8);
+	__rfi_flush_fixup : AT(ADDR(__rfi_flush_fixup) - LOAD_OFFSET) {
+		__start___rfi_flush_fixup = .;
+		*(__rfi_flush_fixup)
+		__stop___rfi_flush_fixup = .;
+	}
+#endif /* CONFIG_PPC64 */
+
+#ifdef CONFIG_PPC_BARRIER_NOSPEC
+	. = ALIGN(8);
+	__spec_barrier_fixup : AT(ADDR(__spec_barrier_fixup) - LOAD_OFFSET) {
+		__start___barrier_nospec_fixup = .;
+		*(__barrier_nospec_fixup)
+		__stop___barrier_nospec_fixup = .;
+	}
+#endif /* CONFIG_PPC_BARRIER_NOSPEC */
+
+#ifdef CONFIG_PPC_FSL_BOOK3E
+	. = ALIGN(8);
+	__spec_btb_flush_fixup : AT(ADDR(__spec_btb_flush_fixup) - LOAD_OFFSET) {
+		__start__btb_flush_fixup = .;
+		*(__btb_flush_fixup)
+		__stop__btb_flush_fixup = .;
+	}
+#endif
 	EXCEPTION_TABLE(0)
 
 	NOTES :kernel :notes
@@ -183,6 +237,12 @@ SECTIONS
 		*(.rela*)
 	}
 #endif
+	/* .exit.data is discarded at runtime, not link time,
+	 * to deal with references from .exit.text
+	 */
+	.exit.data : AT(ADDR(.exit.data) - LOAD_OFFSET) {
+		EXIT_DATA
+	}
 
 	/* freed after init ends here */
 	. = ALIGN(PAGE_SIZE);
@@ -209,6 +269,12 @@ SECTIONS
 		*(.branch_lt)
 	}
 
+#ifdef CONFIG_DEBUG_INFO_BTF
+	.BTF : AT(ADDR(.BTF) - LOAD_OFFSET) {
+		*(.BTF)
+	}
+#endif
+
 	.opd : AT(ADDR(.opd) - LOAD_OFFSET) {
 		*(.opd)
 	}
@@ -216,6 +282,11 @@ SECTIONS
 	. = ALIGN(256);
 	.got : AT(ADDR(.got) - LOAD_OFFSET) {
 		__toc_start = .;
+#ifndef CONFIG_RELOCATABLE
+		__prom_init_toc_start = .;
+		arch/powerpc/kernel/prom_init.o*(.toc .got)
+		__prom_init_toc_end = .;
+#endif
 		*(.got)
 		*(.toc)
 	}

@@ -34,7 +34,6 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/ptrace.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -73,7 +72,7 @@ struct serial_quirk {
 	unsigned int prodid;
 	int multi;		/* 1 = multifunction, > 1 = # ports */
 	void (*config)(struct pcmcia_device *);
-	void (*setup)(struct pcmcia_device *, struct uart_port *);
+	void (*setup)(struct pcmcia_device *, struct uart_8250_port *);
 	void (*wakeup)(struct pcmcia_device *);
 	int (*post)(struct pcmcia_device *);
 };
@@ -105,9 +104,9 @@ struct serial_cfg_mem {
  * Elan VPU16551 UART with 14.7456MHz oscillator
  * manfid 0x015D, 0x4C45
  */
-static void quirk_setup_brainboxes_0104(struct pcmcia_device *link, struct uart_port *port)
+static void quirk_setup_brainboxes_0104(struct pcmcia_device *link, struct uart_8250_port *uart)
 {
-	port->uartclk = 14745600;
+	uart->port.uartclk = 14745600;
 }
 
 static int quirk_post_ibm(struct pcmcia_device *link)
@@ -306,6 +305,7 @@ static int serial_resume(struct pcmcia_device *link)
 static int serial_probe(struct pcmcia_device *link)
 {
 	struct serial_info *info;
+	int ret;
 
 	dev_dbg(&link->dev, "serial_attach()\n");
 
@@ -320,7 +320,15 @@ static int serial_probe(struct pcmcia_device *link)
 	if (do_sound)
 		link->config_flags |= CONF_ENABLE_SPKR;
 
-	return serial_config(link);
+	ret = serial_config(link);
+	if (ret)
+		goto free_info;
+
+	return 0;
+
+free_info:
+	kfree(info);
+	return ret;
 }
 
 static void serial_detach(struct pcmcia_device *link)
@@ -343,25 +351,25 @@ static void serial_detach(struct pcmcia_device *link)
 static int setup_serial(struct pcmcia_device *handle, struct serial_info * info,
 			unsigned int iobase, int irq)
 {
-	struct uart_port port;
+	struct uart_8250_port uart;
 	int line;
 
-	memset(&port, 0, sizeof (struct uart_port));
-	port.iobase = iobase;
-	port.irq = irq;
-	port.flags = UPF_BOOT_AUTOCONF | UPF_SKIP_TEST | UPF_SHARE_IRQ;
-	port.uartclk = 1843200;
-	port.dev = &handle->dev;
+	memset(&uart, 0, sizeof(uart));
+	uart.port.iobase = iobase;
+	uart.port.irq = irq;
+	uart.port.flags = UPF_BOOT_AUTOCONF | UPF_SKIP_TEST | UPF_SHARE_IRQ;
+	uart.port.uartclk = 1843200;
+	uart.port.dev = &handle->dev;
 	if (buggy_uart)
-		port.flags |= UPF_BUGGY_UART;
+		uart.port.flags |= UPF_BUGGY_UART;
 
 	if (info->quirk && info->quirk->setup)
-		info->quirk->setup(handle, &port);
+		info->quirk->setup(handle, &uart);
 
-	line = serial8250_register_port(&port);
+	line = serial8250_register_8250_port(&uart);
 	if (line < 0) {
-		printk(KERN_NOTICE "serial_cs: serial8250_register_port() at "
-		       "0x%04lx, irq %d failed\n", (u_long)iobase, irq);
+		pr_err("serial_cs: serial8250_register_8250_port() at 0x%04lx, irq %d failed\n",
+							(unsigned long)iobase, irq);
 		return -EINVAL;
 	}
 
@@ -630,8 +638,10 @@ static int serial_config(struct pcmcia_device * link)
 	    (link->has_func_id) &&
 	    (link->socket->pcmcia_pfc == 0) &&
 	    ((link->func_id == CISTPL_FUNCID_MULTI) ||
-	     (link->func_id == CISTPL_FUNCID_SERIAL)))
-		pcmcia_loop_config(link, serial_check_for_multi, info);
+	     (link->func_id == CISTPL_FUNCID_SERIAL))) {
+		if (pcmcia_loop_config(link, serial_check_for_multi, info))
+			goto failed;
+	}
 
 	/*
 	 * Apply any multi-port quirk.
@@ -770,6 +780,7 @@ static const struct pcmcia_device_id serial_ids[] = {
 	PCMCIA_DEVICE_PROD_ID12("Multi-Tech", "MT2834LT", 0x5f73be51, 0x4cd7c09e),
 	PCMCIA_DEVICE_PROD_ID12("OEM      ", "C288MX     ", 0xb572d360, 0xd2385b7a),
 	PCMCIA_DEVICE_PROD_ID12("Option International", "V34bis GSM/PSTN Data/Fax Modem", 0x9d7cd6f5, 0x5cb8bf41),
+	PCMCIA_DEVICE_PROD_ID12("Option International", "GSM-Ready 56K/ISDN", 0x9d7cd6f5, 0xb23844aa),
 	PCMCIA_DEVICE_PROD_ID12("PCMCIA   ", "C336MX     ", 0x99bcafe9, 0xaa25bcab),
 	PCMCIA_DEVICE_PROD_ID12("Quatech Inc", "PCMCIA Dual RS-232 Serial Port Card", 0xc4420b35, 0x92abc92f),
 	PCMCIA_DEVICE_PROD_ID12("Quatech Inc", "Dual RS-232 Serial Port PC Card", 0xc4420b35, 0x031a380d),
@@ -852,18 +863,6 @@ static struct pcmcia_driver serial_cs_driver = {
 	.suspend	= serial_suspend,
 	.resume		= serial_resume,
 };
-
-static int __init init_serial_cs(void)
-{
-	return pcmcia_register_driver(&serial_cs_driver);
-}
-
-static void __exit exit_serial_cs(void)
-{
-	pcmcia_unregister_driver(&serial_cs_driver);
-}
-
-module_init(init_serial_cs);
-module_exit(exit_serial_cs);
+module_pcmcia_driver(serial_cs_driver);
 
 MODULE_LICENSE("GPL");

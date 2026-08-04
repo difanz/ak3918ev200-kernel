@@ -17,8 +17,10 @@
 #include <linux/user.h>
 #include <linux/personality.h>
 #include <linux/security.h>
+#include <linux/seccomp.h>
 #include <linux/compat.h>
 #include <linux/signal.h>
+#include <linux/audit.h>
 
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
@@ -26,7 +28,7 @@
 #include <asm/asm-offsets.h>
 
 /* PSW bits we allow the debugger to modify */
-#define USER_PSW_BITS	(PSW_N | PSW_V | PSW_CB)
+#define USER_PSW_BITS	(PSW_N | PSW_B | PSW_V | PSW_CB)
 
 /*
  * Called by kernel/ptrace.c when detaching..
@@ -154,6 +156,9 @@ long arch_ptrace(struct task_struct *child, long request,
 		if ((addr & (sizeof(unsigned long)-1)) ||
 		     addr >= sizeof(struct pt_regs))
 			break;
+		if (addr == PT_IAOQ0 || addr == PT_IAOQ1) {
+			data |= 3; /* ensure userspace privilege */
+		}
 		if ((addr >= PT_GR1 && addr <= PT_GR31) ||
 				addr == PT_IAOQ0 || addr == PT_IAOQ1 ||
 				(addr >= PT_FR0 && addr <= PT_FR31 + 4) ||
@@ -187,16 +192,18 @@ long arch_ptrace(struct task_struct *child, long request,
 
 static compat_ulong_t translate_usr_offset(compat_ulong_t offset)
 {
-	if (offset < 0)
-		return sizeof(struct pt_regs);
-	else if (offset <= 32*4)	/* gr[0..31] */
-		return offset * 2 + 4;
-	else if (offset <= 32*4+32*8)	/* gr[0..31] + fr[0..31] */
-		return offset + 32*4;
-	else if (offset < sizeof(struct pt_regs)/2 + 32*4)
-		return offset * 2 + 4 - 32*8;
+	compat_ulong_t pos;
+
+	if (offset < 32*4)	/* gr[0..31] */
+		pos = offset * 2 + 4;
+	else if (offset < 32*4+32*8)	/* fr[0] ... fr[31] */
+		pos = (offset - 32*4) + PT_FR0;
+	else if (offset < sizeof(struct pt_regs)/2 + 32*4) /* sr[0] ... ipsw */
+		pos = (offset - 32*4 - 32*8) * 2 + PT_SR0 + 4;
 	else
-		return sizeof(struct pt_regs);
+		pos = sizeof(struct pt_regs);
+
+	return pos;
 }
 
 long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
@@ -240,9 +247,12 @@ long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
 			addr = translate_usr_offset(addr);
 			if (addr >= sizeof(struct pt_regs))
 				break;
+			if (addr == PT_IAOQ0+4 || addr == PT_IAOQ1+4) {
+				data |= 3; /* ensure userspace privilege */
+			}
 			if (addr >= PT_FR0 && addr <= PT_FR31 + 4) {
 				/* Special case, fp regs are 64 bits anyway */
-				*(__u64 *) ((char *) task_regs(child) + addr) = data;
+				*(__u32 *) ((char *) task_regs(child) + addr) = data;
 				ret = 0;
 			}
 			else if ((addr >= PT_GR1+4 && addr <= PT_GR31+4) ||
@@ -267,10 +277,33 @@ long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
 
 long do_syscall_trace_enter(struct pt_regs *regs)
 {
-	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
-	    tracehook_report_syscall_entry(regs))
-		return -1L;
+	/* Do the secure computing check first. */
+	secure_computing_strict(regs->gr[20]);
 
+	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
+	    tracehook_report_syscall_entry(regs)) {
+		/*
+		 * Tracing decided this syscall should not happen or the
+		 * debugger stored an invalid system call number. Skip
+		 * the system call and the system call restart handling.
+		 */
+		regs->gr[20] = -1UL;
+		goto out;
+	}
+
+#ifdef CONFIG_64BIT
+	if (!is_compat_task())
+		audit_syscall_entry(regs->gr[20], regs->gr[26], regs->gr[25],
+				    regs->gr[24], regs->gr[23]);
+	else
+#endif
+		audit_syscall_entry(regs->gr[20] & 0xffffffff,
+			regs->gr[26] & 0xffffffff,
+			regs->gr[25] & 0xffffffff,
+			regs->gr[24] & 0xffffffff,
+			regs->gr[23] & 0xffffffff);
+
+out:
 	return regs->gr[20];
 }
 
@@ -278,6 +311,8 @@ void do_syscall_trace_exit(struct pt_regs *regs)
 {
 	int stepping = test_thread_flag(TIF_SINGLESTEP) ||
 		test_thread_flag(TIF_BLOCKSTEP);
+
+	audit_syscall_exit(regs);
 
 	if (stepping || test_thread_flag(TIF_SYSCALL_TRACE))
 		tracehook_report_syscall_exit(regs, stepping);

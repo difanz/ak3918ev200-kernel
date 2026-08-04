@@ -13,26 +13,18 @@
 
 /include/ "mpc5200b.dtsi"
 
+&gpt0 { gpio-controller; fsl,has-wdt; };
+&gpt1 { gpio-controller; };
+
 / {
 	model = "intercontrol,digsy-mtc";
 	compatible = "intercontrol,digsy-mtc";
 
-	memory {
+	memory@0 {
 		reg = <0x00000000 0x02000000>;	// 32MB
 	};
 
 	soc5200@f0000000 {
-		timer@600 {	// General Purpose Timer
-			#gpio-cells = <2>;
-			fsl,has-wdt;
-			gpio-controller;
-		};
-
-		timer@610 {
-			#gpio-cells = <2>;
-			gpio-controller;
-		};
-
 		rtc@800 {
 			status = "disabled";
 		};

@@ -358,6 +358,7 @@ nosy_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct client *client = file->private_data;
 	spinlock_t *client_list_lock = &client->lynx->client_list_lock;
 	struct nosy_stats stats;
+	int ret;
 
 	switch (cmd) {
 	case NOSY_IOC_GET_STATS:
@@ -372,11 +373,15 @@ nosy_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return 0;
 
 	case NOSY_IOC_START:
+		ret = -EBUSY;
 		spin_lock_irq(client_list_lock);
-		list_add_tail(&client->link, &client->lynx->client_list);
+		if (list_empty(&client->link)) {
+			list_add_tail(&client->link, &client->lynx->client_list);
+			ret = 0;
+		}
 		spin_unlock_irq(client_list_lock);
 
-		return 0;
+		return ret;
 
 	case NOSY_IOC_STOP:
 		spin_lock_irq(client_list_lock);
@@ -529,7 +534,7 @@ remove_card(struct pci_dev *dev)
 
 #define RCV_BUFFER_SIZE (16 * 1024)
 
-static int __devinit
+static int
 add_card(struct pci_dev *dev, const struct pci_device_id *unused)
 {
 	struct pcilynx *lynx;
@@ -683,7 +688,7 @@ fail_disable:
 	return ret;
 }
 
-static struct pci_device_id pci_table[] __devinitdata = {
+static struct pci_device_id pci_table[] = {
 	{
 		.vendor =    PCI_VENDOR_ID_TI,
 		.device =    PCI_DEVICE_ID_TI_PCILYNX,
@@ -693,6 +698,8 @@ static struct pci_device_id pci_table[] __devinitdata = {
 	{ }	/* Terminating entry */
 };
 
+MODULE_DEVICE_TABLE(pci, pci_table);
+
 static struct pci_driver lynx_pci_driver = {
 	.name =		driver_name,
 	.id_table =	pci_table,
@@ -700,22 +707,8 @@ static struct pci_driver lynx_pci_driver = {
 	.remove =	remove_card,
 };
 
+module_pci_driver(lynx_pci_driver);
+
 MODULE_AUTHOR("Kristian Hoegsberg");
 MODULE_DESCRIPTION("Snoop mode driver for TI pcilynx 1394 controllers");
 MODULE_LICENSE("GPL");
-MODULE_DEVICE_TABLE(pci, pci_table);
-
-static int __init nosy_init(void)
-{
-	return pci_register_driver(&lynx_pci_driver);
-}
-
-static void __exit nosy_cleanup(void)
-{
-	pci_unregister_driver(&lynx_pci_driver);
-
-	pr_info("Unloaded %s\n", driver_name);
-}
-
-module_init(nosy_init);
-module_exit(nosy_cleanup);

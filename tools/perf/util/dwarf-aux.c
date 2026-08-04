@@ -139,8 +139,24 @@ int cu_walk_functions_at(Dwarf_Die *cu_die, Dwarf_Addr addr,
 bool die_compare_name(Dwarf_Die *dw_die, const char *tname)
 {
 	const char *name;
+
 	name = dwarf_diename(dw_die);
 	return name ? (strcmp(tname, name) == 0) : false;
+}
+
+/**
+ * die_match_name - Match diename and glob
+ * @dw_die: a DIE
+ * @glob: a string of target glob pattern
+ *
+ * Glob matching the name of @dw_die and @glob. Return false if matching fail.
+ */
+bool die_match_name(Dwarf_Die *dw_die, const char *glob)
+{
+	const char *name;
+
+	name = dwarf_diename(dw_die);
+	return name ? strglobmatch(name, glob) : false;
 }
 
 /**
@@ -260,6 +276,74 @@ bool die_is_signed_type(Dwarf_Die *tp_die)
 
 	return (ret == DW_ATE_signed_char || ret == DW_ATE_signed ||
 		ret == DW_ATE_signed_fixed);
+}
+
+/**
+ * die_is_func_def - Ensure that this DIE is a subprogram and definition
+ * @dw_die: a DIE
+ *
+ * Ensure that this DIE is a subprogram and NOT a declaration. This
+ * returns true if @dw_die is a function definition.
+ **/
+bool die_is_func_def(Dwarf_Die *dw_die)
+{
+	Dwarf_Attribute attr;
+
+	return (dwarf_tag(dw_die) == DW_TAG_subprogram &&
+		dwarf_attr(dw_die, DW_AT_declaration, &attr) == NULL);
+}
+
+/**
+ * die_entrypc - Returns entry PC (the lowest address) of a DIE
+ * @dw_die: a DIE
+ * @addr: where to store entry PC
+ *
+ * Since dwarf_entrypc() does not return entry PC if the DIE has only address
+ * range, we have to use this to retrieve the lowest address from the address
+ * range attribute.
+ */
+int die_entrypc(Dwarf_Die *dw_die, Dwarf_Addr *addr)
+{
+	Dwarf_Addr base, end;
+	Dwarf_Attribute attr;
+
+	if (!addr)
+		return -EINVAL;
+
+	if (dwarf_entrypc(dw_die, addr) == 0)
+		return 0;
+
+	/*
+	 *  Since the dwarf_ranges() will return 0 if there is no
+	 * DW_AT_ranges attribute, we should check it first.
+	 */
+	if (!dwarf_attr(dw_die, DW_AT_ranges, &attr))
+		return -ENOENT;
+
+	return dwarf_ranges(dw_die, 0, &base, addr, &end) < 0 ? -ENOENT : 0;
+}
+
+/**
+ * die_is_func_instance - Ensure that this DIE is an instance of a subprogram
+ * @dw_die: a DIE
+ *
+ * Ensure that this DIE is an instance (which has an entry address).
+ * This returns true if @dw_die is a function instance. If not, the @dw_die
+ * must be a prototype. You can use die_walk_instances() to find actual
+ * instances.
+ **/
+bool die_is_func_instance(Dwarf_Die *dw_die)
+{
+	Dwarf_Addr tmp;
+	Dwarf_Attribute attr_mem;
+	int tag = dwarf_tag(dw_die);
+
+	if (tag != DW_TAG_subprogram &&
+	    tag != DW_TAG_inlined_subroutine)
+		return false;
+
+	return dwarf_entrypc(dw_die, &tmp) == 0 ||
+		dwarf_attr(dw_die, DW_AT_ranges, &attr_mem) != NULL;
 }
 
 /**
@@ -387,11 +471,52 @@ struct __addr_die_search_param {
 	Dwarf_Die	*die_mem;
 };
 
+static int __die_search_func_tail_cb(Dwarf_Die *fn_die, void *data)
+{
+	struct __addr_die_search_param *ad = data;
+	Dwarf_Addr addr = 0;
+
+	if (dwarf_tag(fn_die) == DW_TAG_subprogram &&
+	    !dwarf_highpc(fn_die, &addr) &&
+	    addr == ad->addr) {
+		memcpy(ad->die_mem, fn_die, sizeof(Dwarf_Die));
+		return DWARF_CB_ABORT;
+	}
+	return DWARF_CB_OK;
+}
+
+/**
+ * die_find_tailfunc - Search for a non-inlined function with tail call at
+ * given address
+ * @cu_die: a CU DIE which including @addr
+ * @addr: target address
+ * @die_mem: a buffer for result DIE
+ *
+ * Search for a non-inlined function DIE with tail call at @addr. Stores the
+ * DIE to @die_mem and returns it if found. Returns NULL if failed.
+ */
+Dwarf_Die *die_find_tailfunc(Dwarf_Die *cu_die, Dwarf_Addr addr,
+				    Dwarf_Die *die_mem)
+{
+	struct __addr_die_search_param ad;
+	ad.addr = addr;
+	ad.die_mem = die_mem;
+	/* dwarf_getscopes can't find subprogram. */
+	if (!dwarf_getfuncs(cu_die, __die_search_func_tail_cb, &ad, 0))
+		return NULL;
+	else
+		return die_mem;
+}
+
 /* die_find callback for non-inlined function search */
 static int __die_search_func_cb(Dwarf_Die *fn_die, void *data)
 {
 	struct __addr_die_search_param *ad = data;
 
+	/*
+	 * Since a declaration entry doesn't has given pc, this always returns
+	 * function definition entry.
+	 */
 	if (dwarf_tag(fn_die) == DW_TAG_subprogram &&
 	    dwarf_haspc(fn_die, ad->addr)) {
 		memcpy(ad->die_mem, fn_die, sizeof(Dwarf_Die));
@@ -407,7 +532,7 @@ static int __die_search_func_cb(Dwarf_Die *fn_die, void *data)
  * @die_mem: a buffer for result DIE
  *
  * Search a non-inlined function DIE which includes @addr. Stores the
- * DIE to @die_mem and returns it if found. Returns NULl if failed.
+ * DIE to @die_mem and returns it if found. Returns NULL if failed.
  */
 Dwarf_Die *die_find_realfunc(Dwarf_Die *cu_die, Dwarf_Addr addr,
 				    Dwarf_Die *die_mem)
@@ -435,15 +560,32 @@ static int __die_find_inline_cb(Dwarf_Die *die_mem, void *data)
 }
 
 /**
- * die_find_inlinefunc - Search an inlined function at given address
- * @cu_die: a CU DIE which including @addr
+ * die_find_top_inlinefunc - Search the top inlined function at given address
+ * @sp_die: a subprogram DIE which including @addr
  * @addr: target address
  * @die_mem: a buffer for result DIE
  *
  * Search an inlined function DIE which includes @addr. Stores the
- * DIE to @die_mem and returns it if found. Returns NULl if failed.
+ * DIE to @die_mem and returns it if found. Returns NULL if failed.
+ * Even if several inlined functions are expanded recursively, this
+ * doesn't trace it down, and returns the topmost one.
+ */
+Dwarf_Die *die_find_top_inlinefunc(Dwarf_Die *sp_die, Dwarf_Addr addr,
+				   Dwarf_Die *die_mem)
+{
+	return die_find_child(sp_die, __die_find_inline_cb, &addr, die_mem);
+}
+
+/**
+ * die_find_inlinefunc - Search an inlined function at given address
+ * @sp_die: a subprogram DIE which including @addr
+ * @addr: target address
+ * @die_mem: a buffer for result DIE
+ *
+ * Search an inlined function DIE which includes @addr. Stores the
+ * DIE to @die_mem and returns it if found. Returns NULL if failed.
  * If several inlined functions are expanded recursively, this trace
- * it and returns deepest one.
+ * it down and returns deepest one.
  */
 Dwarf_Die *die_find_inlinefunc(Dwarf_Die *sp_die, Dwarf_Addr addr,
 			       Dwarf_Die *die_mem)
@@ -479,6 +621,9 @@ static int __die_walk_instances_cb(Dwarf_Die *inst, void *data)
 	Dwarf_Attribute *attr;
 	Dwarf_Die *origin;
 	int tmp;
+
+	if (!die_is_func_instance(inst))
+		return DIE_FIND_CB_CONTINUE;
 
 	attr = dwarf_attr(inst, DW_AT_abstract_origin, &attr_mem);
 	if (attr == NULL)
@@ -551,15 +696,14 @@ static int __die_walk_funclines_cb(Dwarf_Die *in_die, void *data)
 	if (dwarf_tag(in_die) == DW_TAG_inlined_subroutine) {
 		fname = die_get_call_file(in_die);
 		lineno = die_get_call_lineno(in_die);
-		if (fname && lineno > 0 && dwarf_entrypc(in_die, &addr) == 0) {
+		if (fname && lineno > 0 && die_entrypc(in_die, &addr) == 0) {
 			lw->retval = lw->callback(fname, lineno, addr, lw->data);
 			if (lw->retval != 0)
 				return DIE_FIND_CB_END;
 		}
+		if (!lw->recursive)
+			return DIE_FIND_CB_SIBLING;
 	}
-	if (!lw->recursive)
-		/* Don't need to search recursively */
-		return DIE_FIND_CB_SIBLING;
 
 	if (addr) {
 		fname = dwarf_decl_file(in_die);
@@ -592,7 +736,7 @@ static int __die_walk_funclines(Dwarf_Die *sp_die, bool recursive,
 	/* Handle function declaration line */
 	fname = dwarf_decl_file(sp_die);
 	if (fname && dwarf_decl_line(sp_die, &lineno) == 0 &&
-	    dwarf_entrypc(sp_die, &addr) == 0) {
+	    die_entrypc(sp_die, &addr) == 0) {
 		lw.retval = callback(fname, lineno, addr, data);
 		if (lw.retval != 0)
 			goto done;
@@ -606,6 +750,10 @@ static int __die_walk_culines_cb(Dwarf_Die *sp_die, void *data)
 {
 	struct __line_walk_param *lw = data;
 
+	/*
+	 * Since inlined function can include another inlined function in
+	 * the same file, we need to walk in it recursively.
+	 */
 	lw->retval = __die_walk_funclines(sp_die, true, lw->callback, lw->data);
 	if (lw->retval != 0)
 		return DWARF_CB_ABORT;
@@ -630,15 +778,19 @@ int die_walk_lines(Dwarf_Die *rt_die, line_walk_callback_t callback, void *data)
 	Dwarf_Lines *lines;
 	Dwarf_Line *line;
 	Dwarf_Addr addr;
-	const char *fname;
+	const char *fname, *decf = NULL, *inf = NULL;
 	int lineno, ret = 0;
+	int decl = 0, inl;
 	Dwarf_Die die_mem, *cu_die;
 	size_t nlines, i;
+	bool flag;
 
 	/* Get the CU die */
-	if (dwarf_tag(rt_die) != DW_TAG_compile_unit)
+	if (dwarf_tag(rt_die) != DW_TAG_compile_unit) {
 		cu_die = dwarf_diecu(rt_die, &die_mem, NULL, NULL);
-	else
+		dwarf_decl_line(rt_die, &decl);
+		decf = dwarf_decl_file(rt_die);
+	} else
 		cu_die = rt_die;
 	if (!cu_die) {
 		pr_debug2("Failed to get CU from given DIE.\n");
@@ -662,16 +814,36 @@ int die_walk_lines(Dwarf_Die *rt_die, line_walk_callback_t callback, void *data)
 				  "Possible error in debuginfo.\n");
 			continue;
 		}
+		/* Skip end-of-sequence */
+		if (dwarf_lineendsequence(line, &flag) != 0 || flag)
+			continue;
+		/* Skip Non statement line-info */
+		if (dwarf_linebeginstatement(line, &flag) != 0 || !flag)
+			continue;
 		/* Filter lines based on address */
-		if (rt_die != cu_die)
+		if (rt_die != cu_die) {
 			/*
 			 * Address filtering
 			 * The line is included in given function, and
 			 * no inline block includes it.
 			 */
-			if (!dwarf_haspc(rt_die, addr) ||
-			    die_find_inlinefunc(rt_die, addr, &die_mem))
+			if (!dwarf_haspc(rt_die, addr))
 				continue;
+
+			if (die_find_inlinefunc(rt_die, addr, &die_mem)) {
+				/* Call-site check */
+				inf = die_get_call_file(&die_mem);
+				if ((inf && !strcmp(inf, decf)) &&
+				    die_get_call_lineno(&die_mem) == lineno)
+					goto found;
+
+				dwarf_decl_line(&die_mem, &inl);
+				if (inl != decl ||
+				    decf != dwarf_decl_file(&die_mem))
+					continue;
+			}
+		}
+found:
 		/* Get source line */
 		fname = dwarf_linesrc(line, NULL, NULL);
 
@@ -686,8 +858,9 @@ int die_walk_lines(Dwarf_Die *rt_die, line_walk_callback_t callback, void *data)
 	 */
 	if (rt_die != cu_die)
 		/*
-		 * Don't need walk functions recursively, because nested
-		 * inlined functions don't have lines of the specified DIE.
+		 * Don't need walk inlined functions recursively, because
+		 * inner inlined functions don't have the lines of the
+		 * specified function.
 		 */
 		ret = __die_walk_funclines(rt_die, false, callback, data);
 	else {
@@ -711,14 +884,17 @@ struct __find_variable_param {
 static int __die_find_variable_cb(Dwarf_Die *die_mem, void *data)
 {
 	struct __find_variable_param *fvp = data;
+	Dwarf_Attribute attr;
 	int tag;
 
 	tag = dwarf_tag(die_mem);
 	if ((tag == DW_TAG_formal_parameter ||
 	     tag == DW_TAG_variable) &&
-	    die_compare_name(die_mem, fvp->name))
+	    die_compare_name(die_mem, fvp->name) &&
+	/* Does the DIE have location information or external instance? */
+	    (dwarf_attr(die_mem, DW_AT_external, &attr) ||
+	     dwarf_attr(die_mem, DW_AT_location, &attr)))
 		return DIE_FIND_CB_END;
-
 	if (dwarf_haspc(die_mem, fvp->addr))
 		return DIE_FIND_CB_CONTINUE;
 	else
@@ -747,10 +923,16 @@ static int __die_find_member_cb(Dwarf_Die *die_mem, void *data)
 {
 	const char *name = data;
 
-	if ((dwarf_tag(die_mem) == DW_TAG_member) &&
-	    die_compare_name(die_mem, name))
-		return DIE_FIND_CB_END;
-
+	if (dwarf_tag(die_mem) == DW_TAG_member) {
+		if (die_compare_name(die_mem, name))
+			return DIE_FIND_CB_END;
+		else if (!dwarf_diename(die_mem)) {	/* Unnamed structure */
+			Dwarf_Die type_die, tmp_die;
+			if (die_get_type(die_mem, &type_die) &&
+			    die_find_member(&type_die, name, &tmp_die))
+				return DIE_FIND_CB_END;
+		}
+	}
 	return DIE_FIND_CB_SIBLING;
 }
 
@@ -772,19 +954,17 @@ Dwarf_Die *die_find_member(Dwarf_Die *st_die, const char *name,
 /**
  * die_get_typename - Get the name of given variable DIE
  * @vr_die: a variable DIE
- * @buf: a buffer for result type name
- * @len: a max-length of @buf
+ * @buf: a strbuf for result type name
  *
- * Get the name of @vr_die and stores it to @buf. Return the actual length
- * of type name if succeeded. Return -E2BIG if @len is not enough long, and
- * Return -ENOENT if failed to find type name.
+ * Get the name of @vr_die and stores it to @buf. Return 0 if succeeded.
+ * and Return -ENOENT if failed to find type name.
  * Note that the result will stores typedef name if possible, and stores
  * "*(function_type)" if the type is a function pointer.
  */
-int die_get_typename(Dwarf_Die *vr_die, char *buf, int len)
+int die_get_typename(Dwarf_Die *vr_die, struct strbuf *buf)
 {
 	Dwarf_Die type;
-	int tag, ret, ret2;
+	int tag, ret;
 	const char *tmp = "";
 
 	if (__die_get_real_type(vr_die, &type) == NULL)
@@ -795,8 +975,8 @@ int die_get_typename(Dwarf_Die *vr_die, char *buf, int len)
 		tmp = "*";
 	else if (tag == DW_TAG_subroutine_type) {
 		/* Function pointer */
-		ret = snprintf(buf, len, "(function_type)");
-		return (ret >= len) ? -E2BIG : ret;
+		strbuf_addf(buf, "(function_type)");
+		return 0;
 	} else {
 		if (!dwarf_diename(&type))
 			return -ENOENT;
@@ -804,40 +984,159 @@ int die_get_typename(Dwarf_Die *vr_die, char *buf, int len)
 			tmp = "union ";
 		else if (tag == DW_TAG_structure_type)
 			tmp = "struct ";
+		else if (tag == DW_TAG_enumeration_type)
+			tmp = "enum ";
 		/* Write a base name */
-		ret = snprintf(buf, len, "%s%s", tmp, dwarf_diename(&type));
-		return (ret >= len) ? -E2BIG : ret;
+		strbuf_addf(buf, "%s%s", tmp, dwarf_diename(&type));
+		return 0;
 	}
-	ret = die_get_typename(&type, buf, len);
-	if (ret > 0) {
-		ret2 = snprintf(buf + ret, len - ret, "%s", tmp);
-		ret = (ret2 >= len - ret) ? -E2BIG : ret2 + ret;
-	}
+	ret = die_get_typename(&type, buf);
+	if (ret == 0)
+		strbuf_addf(buf, "%s", tmp);
+
 	return ret;
 }
 
 /**
  * die_get_varname - Get the name and type of given variable DIE
  * @vr_die: a variable DIE
- * @buf: a buffer for type and variable name
- * @len: the max-length of @buf
+ * @buf: a strbuf for type and variable name
  *
  * Get the name and type of @vr_die and stores it in @buf as "type\tname".
  */
-int die_get_varname(Dwarf_Die *vr_die, char *buf, int len)
+int die_get_varname(Dwarf_Die *vr_die, struct strbuf *buf)
 {
-	int ret, ret2;
+	int ret;
 
-	ret = die_get_typename(vr_die, buf, len);
+	ret = die_get_typename(vr_die, buf);
 	if (ret < 0) {
 		pr_debug("Failed to get type, make it unknown.\n");
-		ret = snprintf(buf, len, "(unknown_type)");
+		strbuf_addf(buf, "(unknown_type)");
 	}
-	if (ret > 0) {
-		ret2 = snprintf(buf + ret, len - ret, "\t%s",
-				dwarf_diename(vr_die));
-		ret = (ret2 >= len - ret) ? -E2BIG : ret2 + ret;
+
+	strbuf_addf(buf, "\t%s", dwarf_diename(vr_die));
+
+	return 0;
+}
+
+/**
+ * die_get_var_innermost_scope - Get innermost scope range of given variable DIE
+ * @sp_die: a subprogram DIE
+ * @vr_die: a variable DIE
+ * @buf: a strbuf for variable byte offset range
+ *
+ * Get the innermost scope range of @vr_die and stores it in @buf as
+ * "@<function_name+[NN-NN,NN-NN]>".
+ */
+static int die_get_var_innermost_scope(Dwarf_Die *sp_die, Dwarf_Die *vr_die,
+				struct strbuf *buf)
+{
+	Dwarf_Die *scopes;
+	int count;
+	size_t offset = 0;
+	Dwarf_Addr base;
+	Dwarf_Addr start, end;
+	Dwarf_Addr entry;
+	int ret;
+	bool first = true;
+	const char *name;
+
+	ret = die_entrypc(sp_die, &entry);
+	if (ret)
+		return ret;
+
+	name = dwarf_diename(sp_die);
+	if (!name)
+		return -ENOENT;
+
+	count = dwarf_getscopes_die(vr_die, &scopes);
+
+	/* (*SCOPES)[1] is the DIE for the scope containing that scope */
+	if (count <= 1) {
+		ret = -EINVAL;
+		goto out;
 	}
+
+	while ((offset = dwarf_ranges(&scopes[1], offset, &base,
+				&start, &end)) > 0) {
+		start -= entry;
+		end -= entry;
+
+		if (first) {
+			strbuf_addf(buf, "@<%s+[%" PRIu64 "-%" PRIu64,
+				name, start, end);
+			first = false;
+		} else {
+			strbuf_addf(buf, ",%" PRIu64 "-%" PRIu64,
+				start, end);
+		}
+	}
+
+	if (!first)
+		strbuf_addf(buf, "]>");
+
+out:
+	free(scopes);
 	return ret;
 }
 
+/**
+ * die_get_var_range - Get byte offset range of given variable DIE
+ * @sp_die: a subprogram DIE
+ * @vr_die: a variable DIE
+ * @buf: a strbuf for type and variable name and byte offset range
+ *
+ * Get the byte offset range of @vr_die and stores it in @buf as
+ * "@<function_name+[NN-NN,NN-NN]>".
+ */
+int die_get_var_range(Dwarf_Die *sp_die, Dwarf_Die *vr_die, struct strbuf *buf)
+{
+	int ret = 0;
+	Dwarf_Addr base;
+	Dwarf_Addr start, end;
+	Dwarf_Addr entry;
+	Dwarf_Op *op;
+	size_t nops;
+	size_t offset = 0;
+	Dwarf_Attribute attr;
+	bool first = true;
+	const char *name;
+
+	ret = die_entrypc(sp_die, &entry);
+	if (ret)
+		return ret;
+
+	name = dwarf_diename(sp_die);
+	if (!name)
+		return -ENOENT;
+
+	if (dwarf_attr(vr_die, DW_AT_location, &attr) == NULL)
+		return -EINVAL;
+
+	while ((offset = dwarf_getlocations(
+				&attr, offset, &base,
+				&start, &end, &op, &nops)) > 0) {
+		if (start == 0) {
+			/* Single Location Descriptions */
+			ret = die_get_var_innermost_scope(sp_die, vr_die, buf);
+			return ret;
+		}
+
+		/* Location Lists */
+		start -= entry;
+		end -= entry;
+		if (first) {
+			strbuf_addf(buf, "@<%s+[%" PRIu64 "-%" PRIu64,
+				name, start, end);
+			first = false;
+		} else {
+			strbuf_addf(buf, ",%" PRIu64 "-%" PRIu64,
+				start, end);
+		}
+	}
+
+	if (!first)
+		strbuf_addf(buf, "]>");
+
+	return ret;
+}

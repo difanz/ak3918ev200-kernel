@@ -3,14 +3,15 @@
  *
  *   Author: Ryan Wilson <hap9@epoch.ncsc.mil>
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/wait.h>
 #include <linux/bitops.h>
 #include <xen/events.h>
 #include <linux/sched.h>
 #include "pciback.h"
-#include <linux/ratelimit.h>
-#include <linux/printk.h>
 
 int verbose_request;
 module_param(verbose_request, int, 0644);
@@ -125,8 +126,6 @@ void xen_pcibk_reset_device(struct pci_dev *dev)
 		if (pci_is_enabled(dev))
 			pci_disable_device(dev);
 
-		pci_write_config_word(dev, PCI_COMMAND, 0);
-
 		dev->is_busmaster = 0;
 	} else {
 		pci_read_config_word(dev, PCI_COMMAND, &cmd);
@@ -158,7 +157,7 @@ int xen_pcibk_enable_msi(struct xen_pcibk_device *pdev,
 		status = pci_enable_msi(dev);
 
 	if (status) {
-		pr_warn_ratelimited(DRV_NAME ": %s: error enabling MSI for guest %u: err %d\n",
+		pr_warn_ratelimited("%s: error enabling MSI for guest %u: err %d\n",
 				    pci_name(dev), pdev->xdev->otherend_id,
 				    status);
 		op->value = 0;
@@ -226,8 +225,9 @@ int xen_pcibk_enable_msix(struct xen_pcibk_device *pdev,
 	/*
 	 * PCI_COMMAND_MEMORY must be enabled, otherwise we may not be able
 	 * to access the BARs where the MSI-X entries reside.
+	 * But VF devices are unique in which the PF needs to be checked.
 	 */
-	pci_read_config_word(dev, PCI_COMMAND, &cmd);
+	pci_read_config_word(pci_physfn(dev), PCI_COMMAND, &cmd);
 	if (dev->msi_enabled || !(cmd & PCI_COMMAND_MEMORY))
 		return -ENXIO;
 
@@ -240,12 +240,11 @@ int xen_pcibk_enable_msix(struct xen_pcibk_device *pdev,
 		entries[i].vector = op->msix_entries[i].vector;
 	}
 
-	result = pci_enable_msix(dev, entries, op->value);
-
+	result = pci_enable_msix_exact(dev, entries, op->value);
 	if (result == 0) {
 		for (i = 0; i < op->value; i++) {
 			op->msix_entries[i].entry = entries[i].entry;
-			if (entries[i].vector)
+			if (entries[i].vector) {
 				op->msix_entries[i].vector =
 					xen_pirq_from_irq(entries[i].vector);
 				if (unlikely(verbose_request))
@@ -253,9 +252,10 @@ int xen_pcibk_enable_msix(struct xen_pcibk_device *pdev,
 						"MSI-X[%d]: %d\n",
 						pci_name(dev), i,
 						op->msix_entries[i].vector);
+			}
 		}
 	} else
-		pr_warn_ratelimited(DRV_NAME ": %s: error enabling MSI-X for guest %u: err %d!\n",
+		pr_warn_ratelimited("%s: error enabling MSI-X for guest %u: err %d!\n",
 				    pci_name(dev), pdev->xdev->otherend_id,
 				    result);
 	kfree(entries);
@@ -296,26 +296,41 @@ int xen_pcibk_disable_msix(struct xen_pcibk_device *pdev,
 	return 0;
 }
 #endif
+
+static inline bool xen_pcibk_test_op_pending(struct xen_pcibk_device *pdev)
+{
+	return test_bit(_XEN_PCIF_active,
+			(unsigned long *)&pdev->sh_info->flags) &&
+	       !test_and_set_bit(_PDEVF_op_active, &pdev->flags);
+}
+
 /*
 * Now the same evtchn is used for both pcifront conf_read_write request
 * as well as pcie aer front end ack. We use a new work_queue to schedule
 * xen_pcibk conf_read_write service for avoiding confict with aer_core
 * do_recovery job which also use the system default work_queue
 */
-void xen_pcibk_test_and_schedule_op(struct xen_pcibk_device *pdev)
+static void xen_pcibk_test_and_schedule_op(struct xen_pcibk_device *pdev)
 {
+	bool eoi = true;
+
 	/* Check that frontend is requesting an operation and that we are not
 	 * already processing a request */
-	if (test_bit(_XEN_PCIF_active, (unsigned long *)&pdev->sh_info->flags)
-	    && !test_and_set_bit(_PDEVF_op_active, &pdev->flags)) {
+	if (xen_pcibk_test_op_pending(pdev)) {
 		queue_work(xen_pcibk_wq, &pdev->op_work);
+		eoi = false;
 	}
 	/*_XEN_PCIB_active should have been cleared by pcifront. And also make
 	sure xen_pcibk is waiting for ack by checking _PCIB_op_pending*/
 	if (!test_bit(_XEN_PCIB_active, (unsigned long *)&pdev->sh_info->flags)
 	    && test_bit(_PCIB_op_pending, &pdev->flags)) {
 		wake_up(&xen_pcibk_aer_wait_queue);
+		eoi = false;
 	}
+
+	/* EOI if there was nothing to do. */
+	if (eoi)
+		xen_pcibk_lateeoi(pdev, XEN_EOI_FLAG_SPURIOUS);
 }
 
 /* Performing the configuration space reads/writes must not be done in atomic
@@ -323,10 +338,8 @@ void xen_pcibk_test_and_schedule_op(struct xen_pcibk_device *pdev)
  * use of semaphores). This function is intended to be called from a work
  * queue in process context taking a struct xen_pcibk_device as a parameter */
 
-void xen_pcibk_do_op(struct work_struct *data)
+static void xen_pcibk_do_one_op(struct xen_pcibk_device *pdev)
 {
-	struct xen_pcibk_device *pdev =
-		container_of(data, struct xen_pcibk_device, op_work);
 	struct pci_dev *dev;
 	struct xen_pcibk_dev_data *dev_data = NULL;
 	struct xen_pci_op *op = &pdev->op;
@@ -396,19 +409,34 @@ void xen_pcibk_do_op(struct work_struct *data)
 	notify_remote_via_irq(pdev->evtchn_irq);
 
 	/* Mark that we're done. */
-	smp_mb__before_clear_bit(); /* /after/ clearing PCIF_active */
+	smp_mb__before_atomic(); /* /after/ clearing PCIF_active */
 	clear_bit(_PDEVF_op_active, &pdev->flags);
-	smp_mb__after_clear_bit(); /* /before/ final check for work */
+	smp_mb__after_atomic(); /* /before/ final check for work */
+}
 
-	/* Check to see if the driver domain tried to start another request in
-	 * between clearing _XEN_PCIF_active and clearing _PDEVF_op_active.
-	*/
-	xen_pcibk_test_and_schedule_op(pdev);
+void xen_pcibk_do_op(struct work_struct *data)
+{
+	struct xen_pcibk_device *pdev =
+		container_of(data, struct xen_pcibk_device, op_work);
+
+	do {
+		xen_pcibk_do_one_op(pdev);
+	} while (xen_pcibk_test_op_pending(pdev));
+
+	xen_pcibk_lateeoi(pdev, 0);
 }
 
 irqreturn_t xen_pcibk_handle_event(int irq, void *dev_id)
 {
 	struct xen_pcibk_device *pdev = dev_id;
+	bool eoi;
+
+	/* IRQs might come in before pdev->evtchn_irq is written. */
+	if (unlikely(pdev->evtchn_irq != irq))
+		pdev->evtchn_irq = irq;
+
+	eoi = test_and_set_bit(_EOI_pending, &pdev->flags);
+	WARN(eoi, "IRQ while EOI pending\n");
 
 	xen_pcibk_test_and_schedule_op(pdev);
 
@@ -423,7 +451,7 @@ static irqreturn_t xen_pcibk_guest_interrupt(int irq, void *dev_id)
 		dev_data->handled++;
 		if ((dev_data->handled % 1000) == 0) {
 			if (xen_test_irq_shared(irq)) {
-				printk(KERN_INFO "%s IRQ line is not shared "
+				pr_info("%s IRQ line is not shared "
 					"with other domains. Turning ISR off\n",
 					 dev_data->irq_name);
 				dev_data->ack_intr = 0;

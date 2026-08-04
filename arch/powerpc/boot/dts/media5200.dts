@@ -13,6 +13,8 @@
 
 /include/ "mpc5200b.dtsi"
 
+&gpt0 { fsl,has-wdt; };
+
 / {
 	model = "fsl,media5200";
 	compatible = "fsl,media5200";
@@ -34,16 +36,12 @@
 		};
 	};
 
-	memory {
+	memory@0 {
 		reg = <0x00000000 0x08000000>;	// 128MB RAM
 	};
 
 	soc5200@f0000000 {
 		bus-frequency = <132000000>;// 132 MHz
-
-		timer@600 {	// General Purpose Timer
-			fsl,has-wdt;
-		};
 
 		psc@2000 {	// PSC1
 			status = "disabled";

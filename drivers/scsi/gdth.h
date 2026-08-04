@@ -49,15 +49,6 @@
 /* GDT_ISA */
 #define GDT2_ID         0x0120941c              /* GDT2000/2020 */
 
-/* vendor ID, device IDs (PCI) */
-/* these defines should already exist in <linux/pci.h> */
-#ifndef PCI_VENDOR_ID_VORTEX
-#define PCI_VENDOR_ID_VORTEX            0x1119  /* PCI controller vendor ID */
-#endif
-#ifndef PCI_VENDOR_ID_INTEL
-#define PCI_VENDOR_ID_INTEL             0x8086  
-#endif
-
 #ifndef PCI_DEVICE_ID_VORTEX_GDT60x0
 /* GDT_PCI */
 #define PCI_DEVICE_ID_VORTEX_GDT60x0    0       /* GDT6000/6020/6050 */
@@ -185,9 +176,6 @@
 #define MSGLEN          16                      /* size of message text */
 #define MSG_SIZE        34                      /* size of message structure */
 #define MSG_REQUEST     0                       /* async. event: message */
-
-/* cacheservice defines */
-#define SECTOR_SIZE     0x200                   /* always 512 bytes per sec. */
 
 /* DPMEM constants */
 #define DPMEM_MAGIC     0xC0FFEE11
@@ -1016,6 +1004,7 @@ typedef struct {
 
 /* function prototyping */
 
-int gdth_proc_info(struct Scsi_Host *, char *,char **,off_t,int,int);
+int gdth_show_info(struct seq_file *, struct Scsi_Host *);
+int gdth_set_info(struct Scsi_Host *, char *, int);
 
 #endif

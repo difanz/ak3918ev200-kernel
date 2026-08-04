@@ -104,6 +104,10 @@ unsigned long __init wii_mmu_mapin_mem2(unsigned long top)
 	/* MEM2 64MB@0x10000000 */
 	delta = wii_hole_start + wii_hole_size;
 	size = top - delta;
+
+	if (__map_without_bats)
+		return delta;
+
 	for (bl = 128<<10; bl < max_size; bl <<= 1) {
 		if (bl * 2 > size)
 			break;
@@ -211,6 +215,8 @@ static int __init wii_probe(void)
 	if (!of_flat_dt_is_compatible(dt_root, "nintendo,wii"))
 		return 0;
 
+	pm_power_off = wii_power_off;
+
 	return 1;
 }
 
@@ -226,7 +232,6 @@ define_machine(wii) {
 	.init_early		= wii_init_early,
 	.setup_arch		= wii_setup_arch,
 	.restart		= wii_restart,
-	.power_off		= wii_power_off,
 	.halt			= wii_halt,
 	.init_IRQ		= wii_pic_probe,
 	.get_irq		= flipper_pic_get_irq,
@@ -235,7 +240,7 @@ define_machine(wii) {
 	.machine_shutdown	= wii_shutdown,
 };
 
-static struct of_device_id wii_of_bus[] = {
+static const struct of_device_id wii_of_bus[] = {
 	{ .compatible = "nintendo,hollywood", },
 	{ },
 };

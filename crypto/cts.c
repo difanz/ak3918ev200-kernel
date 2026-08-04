@@ -137,8 +137,8 @@ static int crypto_cts_encrypt(struct blkcipher_desc *desc,
 	lcldesc.info = desc->info;
 	lcldesc.flags = desc->flags;
 
-	if (tot_blocks == 1) {
-		err = crypto_blkcipher_encrypt_iv(&lcldesc, dst, src, bsize);
+	if (tot_blocks <= 1) {
+		err = crypto_blkcipher_encrypt_iv(&lcldesc, dst, src, nbytes);
 	} else if (nbytes <= bsize * 2) {
 		err = cts_cbc_encrypt(ctx, desc, dst, src, 0, nbytes);
 	} else {
@@ -202,7 +202,8 @@ static int cts_cbc_decrypt(struct crypto_cts_ctx *ctx,
 	/* 5. Append the tail (BB - Ln) bytes of Xn (tmp) to Cn to create En */
 	memcpy(s + bsize + lastn, tmp + lastn, bsize - lastn);
 	/* 6. Decrypt En to create Pn-1 */
-	memset(iv, 0, sizeof(iv));
+	memzero_explicit(iv, sizeof(iv));
+
 	sg_set_buf(&sgsrc[0], s + bsize, bsize);
 	sg_set_buf(&sgdst[0], d, bsize);
 	err = crypto_blkcipher_decrypt_iv(&lcldesc, sgdst, sgsrc, bsize);
@@ -231,8 +232,8 @@ static int crypto_cts_decrypt(struct blkcipher_desc *desc,
 	lcldesc.info = desc->info;
 	lcldesc.flags = desc->flags;
 
-	if (tot_blocks == 1) {
-		err = crypto_blkcipher_decrypt_iv(&lcldesc, dst, src, bsize);
+	if (tot_blocks <= 1) {
+		err = crypto_blkcipher_decrypt_iv(&lcldesc, dst, src, nbytes);
 	} else if (nbytes <= bsize * 2) {
 		err = cts_cbc_decrypt(ctx, desc, dst, src, 0, nbytes);
 	} else {
@@ -282,12 +283,14 @@ static struct crypto_instance *crypto_cts_alloc(struct rtattr **tb)
 
 	alg = crypto_attr_alg(tb[1], CRYPTO_ALG_TYPE_BLKCIPHER,
 				  CRYPTO_ALG_TYPE_MASK);
-	err = PTR_ERR(alg);
 	if (IS_ERR(alg))
-		return ERR_PTR(err);
+		return ERR_CAST(alg);
 
 	inst = ERR_PTR(-EINVAL);
 	if (!is_power_of_2(alg->cra_blocksize))
+		goto out_put_alg;
+
+	if (strncmp(alg->cra_name, "cbc(", 4))
 		goto out_put_alg;
 
 	inst = crypto_alloc_instance("cts", alg);
@@ -306,8 +309,6 @@ static struct crypto_instance *crypto_cts_alloc(struct rtattr **tb)
 	inst->alg.cra_blkcipher.ivsize = alg->cra_blocksize;
 	inst->alg.cra_blkcipher.min_keysize = alg->cra_blkcipher.min_keysize;
 	inst->alg.cra_blkcipher.max_keysize = alg->cra_blkcipher.max_keysize;
-
-	inst->alg.cra_blkcipher.geniv = "seqiv";
 
 	inst->alg.cra_ctxsize = sizeof(struct crypto_cts_ctx);
 
@@ -351,3 +352,4 @@ module_exit(crypto_cts_module_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("CTS-CBC CipherText Stealing for CBC");
+MODULE_ALIAS_CRYPTO("cts");

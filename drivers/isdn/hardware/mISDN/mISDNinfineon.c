@@ -125,7 +125,7 @@ struct inf_hw {
 #define PCI_SUBVENDOR_SEDLBAUER_PCI     0x53
 #define PCI_SUB_ID_SEDLBAUER            0x01
 
-static struct pci_device_id infineon_ids[] __devinitdata = {
+static struct pci_device_id infineon_ids[] = {
 	{ PCI_VDEVICE(EICON, PCI_DEVICE_ID_EICON_DIVA20), INF_DIVA20 },
 	{ PCI_VDEVICE(EICON, PCI_DEVICE_ID_EICON_DIVA20_U), INF_DIVA20U },
 	{ PCI_VDEVICE(EICON, PCI_DEVICE_ID_EICON_DIVA201), INF_DIVA201 },
@@ -603,7 +603,7 @@ inf_ctrl(struct inf_hw *hw, u32 cmd, u_long arg)
 	return ret;
 }
 
-static int __devinit
+static int
 init_irq(struct inf_hw *hw)
 {
 	int	ret, cnt = 3;
@@ -645,24 +645,26 @@ static void
 release_io(struct inf_hw *hw)
 {
 	if (hw->cfg.mode) {
-		if (hw->cfg.p) {
+		if (hw->cfg.mode == AM_MEMIO) {
 			release_mem_region(hw->cfg.start, hw->cfg.size);
-			iounmap(hw->cfg.p);
+			if (hw->cfg.p)
+				iounmap(hw->cfg.p);
 		} else
 			release_region(hw->cfg.start, hw->cfg.size);
 		hw->cfg.mode = AM_NONE;
 	}
 	if (hw->addr.mode) {
-		if (hw->addr.p) {
+		if (hw->addr.mode == AM_MEMIO) {
 			release_mem_region(hw->addr.start, hw->addr.size);
-			iounmap(hw->addr.p);
+			if (hw->addr.p)
+				iounmap(hw->addr.p);
 		} else
 			release_region(hw->addr.start, hw->addr.size);
 		hw->addr.mode = AM_NONE;
 	}
 }
 
-static int __devinit
+static int
 setup_io(struct inf_hw *hw)
 {
 	int err = 0;
@@ -685,9 +687,12 @@ setup_io(struct inf_hw *hw)
 				(ulong)hw->cfg.start, (ulong)hw->cfg.size);
 			return err;
 		}
-		if (hw->ci->cfg_mode == AM_MEMIO)
-			hw->cfg.p = ioremap(hw->cfg.start, hw->cfg.size);
 		hw->cfg.mode = hw->ci->cfg_mode;
+		if (hw->ci->cfg_mode == AM_MEMIO) {
+			hw->cfg.p = ioremap(hw->cfg.start, hw->cfg.size);
+			if (!hw->cfg.p)
+				return -ENOMEM;
+		}
 		if (debug & DEBUG_HW)
 			pr_notice("%s: IO cfg %lx (%lu bytes) mode%d\n",
 				  hw->name, (ulong)hw->cfg.start,
@@ -712,9 +717,12 @@ setup_io(struct inf_hw *hw)
 				(ulong)hw->addr.start, (ulong)hw->addr.size);
 			return err;
 		}
-		if (hw->ci->addr_mode == AM_MEMIO)
-			hw->addr.p = ioremap(hw->addr.start, hw->addr.size);
 		hw->addr.mode = hw->ci->addr_mode;
+		if (hw->ci->addr_mode == AM_MEMIO) {
+			hw->addr.p = ioremap(hw->addr.start, hw->addr.size);
+			if (!hw->addr.p)
+				return -ENOMEM;
+		}
 		if (debug & DEBUG_HW)
 			pr_notice("%s: IO addr %lx (%lu bytes) mode%d\n",
 				  hw->name, (ulong)hw->addr.start,
@@ -896,7 +904,7 @@ release_card(struct inf_hw *card) {
 	inf_cnt--;
 }
 
-static int __devinit
+static int
 setup_instance(struct inf_hw *card)
 {
 	int err;
@@ -1060,7 +1068,7 @@ static const struct inf_cinfo inf_card_info[] = {
 	}
 };
 
-static const struct inf_cinfo * __devinit
+static const struct inf_cinfo *
 get_card_info(enum inf_types typ)
 {
 	const struct inf_cinfo *ci = inf_card_info;
@@ -1073,7 +1081,7 @@ get_card_info(enum inf_types typ)
 	return NULL;
 }
 
-static int __devinit
+static int
 inf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	int err = -ENOMEM;
@@ -1092,7 +1100,7 @@ inf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 	card->ci = get_card_info(ent->driver_data);
 	if (!card->ci) {
-		pr_info("mISDN: do not have informations about adapter at %s\n",
+		pr_info("mISDN: do not have information about adapter at %s\n",
 			pci_name(pdev));
 		kfree(card);
 		pci_disable_device(pdev);
@@ -1135,7 +1143,7 @@ inf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return err;
 }
 
-static void __devexit
+static void
 inf_remove(struct pci_dev *pdev)
 {
 	struct inf_hw	*card = pci_get_drvdata(pdev);
@@ -1149,7 +1157,7 @@ inf_remove(struct pci_dev *pdev)
 static struct pci_driver infineon_driver = {
 	.name = "ISDN Infineon pci",
 	.probe = inf_probe,
-	.remove = __devexit_p(inf_remove),
+	.remove = inf_remove,
 	.id_table = infineon_ids,
 };
 

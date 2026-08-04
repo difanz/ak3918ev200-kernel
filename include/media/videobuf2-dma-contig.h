@@ -1,5 +1,5 @@
 /*
- * videobuf2-dma-coherent.h - DMA coherent memory allocator for videobuf2
+ * videobuf2-dma-contig.h - DMA contig memory allocator for videobuf2
  *
  * Copyright (C) 2010 Samsung Electronics
  *
@@ -10,10 +10,10 @@
  * the Free Software Foundation.
  */
 
-#ifndef _MEDIA_VIDEOBUF2_DMA_COHERENT_H
-#define _MEDIA_VIDEOBUF2_DMA_COHERENT_H
+#ifndef _MEDIA_VIDEOBUF2_DMA_CONTIG_H
+#define _MEDIA_VIDEOBUF2_DMA_CONTIG_H
 
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <linux/dma-mapping.h>
 
 static inline dma_addr_t

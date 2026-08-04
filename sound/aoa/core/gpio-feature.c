@@ -10,8 +10,9 @@
  * registers.
  */
 
-#include <asm/pmac_feature.h>
+#include <linux/of_irq.h>
 #include <linux/interrupt.h>
+#include <asm/pmac_feature.h>
 #include "../aoa.h"
 
 /* TODO: these are lots of global variables
@@ -87,8 +88,10 @@ static struct device_node *get_gpio(char *name,
 	}
 
 	reg = of_get_property(np, "reg", NULL);
-	if (!reg)
+	if (!reg) {
+		of_node_put(np);
 		return NULL;
+	}
 
 	*gpioptr = *reg;
 

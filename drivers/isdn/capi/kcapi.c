@@ -93,7 +93,7 @@ capi_ctr_put(struct capi_ctr *ctr)
 
 static inline struct capi_ctr *get_capi_ctr_by_nr(u16 contr)
 {
-	if (contr - 1 >= CAPI_MAXCONTR)
+	if (contr < 1 || contr - 1 >= CAPI_MAXCONTR)
 		return NULL;
 
 	return capi_controller[contr - 1];
@@ -103,7 +103,7 @@ static inline struct capi20_appl *__get_capi_appl_by_nr(u16 applid)
 {
 	lockdep_assert_held(&capi_controller_lock);
 
-	if (applid - 1 >= CAPI_MAXAPPL)
+	if (applid < 1 || applid - 1 >= CAPI_MAXAPPL)
 		return NULL;
 
 	return capi_applications[applid - 1];
@@ -111,7 +111,7 @@ static inline struct capi20_appl *__get_capi_appl_by_nr(u16 applid)
 
 static inline struct capi20_appl *get_capi_appl_by_nr(u16 applid)
 {
-	if (applid - 1 >= CAPI_MAXAPPL)
+	if (applid < 1 || applid - 1 >= CAPI_MAXAPPL)
 		return NULL;
 
 	return rcu_dereference(capi_applications[applid - 1]);
@@ -564,6 +564,11 @@ int detach_capi_ctr(struct capi_ctr *ctr)
 
 	ctr_down(ctr, CAPI_CTR_DETACHED);
 
+	if (ctr->cnr < 1 || ctr->cnr - 1 >= CAPI_MAXCONTR) {
+		err = -EINVAL;
+		goto unlock_out;
+	}
+
 	if (capi_controller[ctr->cnr - 1] != ctr) {
 		err = -EINVAL;
 		goto unlock_out;
@@ -845,13 +850,13 @@ EXPORT_SYMBOL(capi20_put_message);
  * Return value: CAPI result code
  */
 
-u16 capi20_get_manufacturer(u32 contr, u8 *buf)
+u16 capi20_get_manufacturer(u32 contr, u8 buf[CAPI_MANUFACTURER_LEN])
 {
 	struct capi_ctr *ctr;
 	u16 ret;
 
 	if (contr == 0) {
-		strlcpy(buf, capi_manufakturer, CAPI_MANUFACTURER_LEN);
+		strncpy(buf, capi_manufakturer, CAPI_MANUFACTURER_LEN);
 		return CAPI_NOERROR;
 	}
 
@@ -859,7 +864,7 @@ u16 capi20_get_manufacturer(u32 contr, u8 *buf)
 
 	ctr = get_capi_ctr_by_nr(contr);
 	if (ctr && ctr->state == CAPI_CTR_RUNNING) {
-		strlcpy(buf, ctr->manu, CAPI_MANUFACTURER_LEN);
+		strncpy(buf, ctr->manu, CAPI_MANUFACTURER_LEN);
 		ret = CAPI_NOERROR;
 	} else
 		ret = CAPI_REGNOTINSTALLED;
@@ -915,7 +920,7 @@ EXPORT_SYMBOL(capi20_get_version);
  * Return value: CAPI result code
  */
 
-u16 capi20_get_serial(u32 contr, u8 *serial)
+u16 capi20_get_serial(u32 contr, u8 serial[CAPI_SERIAL_LEN])
 {
 	struct capi_ctr *ctr;
 	u16 ret;
@@ -1032,6 +1037,7 @@ static int old_capi_manufacturer(unsigned int cmd, void __user *data)
 						     sizeof(avmb1_carddef))))
 				return -EFAULT;
 			cdef.cardtype = AVM_CARDTYPE_B1;
+			cdef.cardnr = 0;
 		} else {
 			if ((retval = copy_from_user(&cdef, data,
 						     sizeof(avmb1_extcarddef))))
@@ -1184,7 +1190,7 @@ static int old_capi_manufacturer(unsigned int cmd, void __user *data)
  * Return value: CAPI result code
  */
 
-int capi20_manufacturer(unsigned int cmd, void __user *data)
+int capi20_manufacturer(unsigned long cmd, void __user *data)
 {
 	struct capi_ctr *ctr;
 	int retval;
@@ -1259,7 +1265,7 @@ int capi20_manufacturer(unsigned int cmd, void __user *data)
 	}
 
 	default:
-		printk(KERN_ERR "kcapi: manufacturer command %d unknown.\n",
+		printk(KERN_ERR "kcapi: manufacturer command %lu unknown.\n",
 		       cmd);
 		break;
 

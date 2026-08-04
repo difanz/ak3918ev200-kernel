@@ -14,12 +14,13 @@
 
 #include <linux/ftrace.h>
 #include <linux/uaccess.h>
+#include <linux/module.h>
+#include <linux/stop_machine.h>
 
 #include <asm/cacheflush.h>
 #include <asm/opcodes.h>
 #include <asm/ftrace.h>
-
-#include "insn.h"
+#include <asm/insn.h>
 
 #ifdef CONFIG_THUMB2_KERNEL
 #define	NOP		0xf85deb04	/* pop.w {lr} */
@@ -28,6 +29,23 @@
 #endif
 
 #ifdef CONFIG_DYNAMIC_FTRACE
+
+static int __ftrace_modify_code(void *data)
+{
+	int *command = data;
+
+	set_kernel_text_rw();
+	ftrace_modify_all_code(*command);
+	set_kernel_text_ro();
+
+	return 0;
+}
+
+void arch_ftrace_update_code(int command)
+{
+	stop_machine(__ftrace_modify_code, &command, NULL);
+}
+
 #ifdef CONFIG_OLD_MCOUNT
 #define OLD_MCOUNT_ADDR	((unsigned long) mcount)
 #define OLD_FTRACE_ADDR ((unsigned long) ftrace_caller_old)
@@ -62,6 +80,20 @@ static unsigned long adjust_address(struct dyn_ftrace *rec, unsigned long addr)
 	return addr;
 }
 #endif
+
+int ftrace_arch_code_modify_prepare(void)
+{
+	set_all_modules_text_rw();
+	return 0;
+}
+
+int ftrace_arch_code_modify_post_process(void)
+{
+	set_all_modules_text_ro();
+	/* Make sure any TLB misses during machine stop are cleared. */
+	flush_tlb_all();
+	return 0;
+}
 
 static unsigned long ftrace_call_replace(unsigned long pc, unsigned long addr)
 {
@@ -156,10 +188,8 @@ int ftrace_make_nop(struct module *mod,
 	return ret;
 }
 
-int __init ftrace_dyn_arch_init(void *data)
+int __init ftrace_dyn_arch_init(void)
 {
-	*(unsigned long *)data = 0;
-
 	return 0;
 }
 #endif /* CONFIG_DYNAMIC_FTRACE */
@@ -179,19 +209,20 @@ void prepare_ftrace_return(unsigned long *parent, unsigned long self_addr,
 	old = *parent;
 	*parent = return_hooker;
 
+	trace.func = self_addr;
+	trace.depth = current->curr_ret_stack + 1;
+
+	/* Only trace if the calling function expects to */
+	if (!ftrace_graph_entry(&trace)) {
+		*parent = old;
+		return;
+	}
+
 	err = ftrace_push_return_trace(old, self_addr, &trace.depth,
 				       frame_pointer);
 	if (err == -EBUSY) {
 		*parent = old;
 		return;
-	}
-
-	trace.func = self_addr;
-
-	/* Only trace if the calling function expects to */
-	if (!ftrace_graph_entry(&trace)) {
-		current->curr_ret_stack--;
-		*parent = old;
 	}
 }
 

@@ -178,7 +178,7 @@ FTRACE_ENTRY(kernel_stack, stack_entry,
 
 	F_STRUCT(
 		__field(	int,		size	)
-		__dynamic_array(unsigned long,	caller	)
+		__array(	unsigned long,	caller,	FTRACE_STACK_ENTRIES	)
 	),
 
 	F_printk("\t=> (" IP_FMT ")\n\t=> (" IP_FMT ")\n\t=> (" IP_FMT ")\n"
@@ -223,8 +223,8 @@ FTRACE_ENTRY(bprint, bprint_entry,
 		__dynamic_array(	u32,	buf	)
 	),
 
-	F_printk("%08lx fmt:%p",
-		 __entry->ip, __entry->fmt),
+	F_printk("%ps: %s",
+		 (void *)__entry->ip, __entry->fmt),
 
 	FILTER_OTHER
 );
@@ -238,8 +238,23 @@ FTRACE_ENTRY(print, print_entry,
 		__dynamic_array(	char,	buf	)
 	),
 
-	F_printk("%08lx %s",
-		 __entry->ip, __entry->buf),
+	F_printk("%ps: %s",
+		 (void *)__entry->ip, __entry->buf),
+
+	FILTER_OTHER
+);
+
+FTRACE_ENTRY(bputs, bputs_entry,
+
+	TRACE_BPUTS,
+
+	F_STRUCT(
+		__field(	unsigned long,	ip	)
+		__field(	const char *,	str	)
+	),
+
+	F_printk("%ps: %s",
+		 (void *)__entry->ip, __entry->str),
 
 	FILTER_OTHER
 );

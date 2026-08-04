@@ -116,7 +116,7 @@ static int ipwireless_ppp_start_xmit(struct ppp_channel *ppp_channel,
 					       skb->len,
 					       notify_packet_sent,
 					       network);
-			if (ret == -1) {
+			if (ret < 0) {
 				skb_pull(skb, 2);
 				return 0;
 			}
@@ -133,7 +133,7 @@ static int ipwireless_ppp_start_xmit(struct ppp_channel *ppp_channel,
 					       notify_packet_sent,
 					       network);
 			kfree(buf);
-			if (ret == -1)
+			if (ret < 0)
 				return 0;
 		}
 		kfree_skb(skb);
@@ -274,7 +274,12 @@ static void do_go_online(struct work_struct *work_go_online)
 		network->xaccm[0] = ~0U;
 		network->xaccm[3] = 0x60000000U;
 		network->raccm = ~0U;
-		ppp_register_channel(channel);
+		if (ppp_register_channel(channel) < 0) {
+			printk(KERN_ERR IPWIRELESS_PCCARD_NAME
+					": unable to register PPP channel\n");
+			kfree(channel);
+			return;
+		}
 		spin_lock_irqsave(&network->lock, flags);
 		network->ppp_channel = channel;
 	}
@@ -347,6 +352,8 @@ static struct sk_buff *ipw_packet_received_skb(unsigned char *data,
 	}
 
 	skb = dev_alloc_skb(length + 4);
+	if (skb == NULL)
+		return NULL;
 	skb_reserve(skb, 2);
 	memcpy(skb_put(skb, length), data, length);
 
@@ -392,7 +399,8 @@ void ipwireless_network_packet_received(struct ipw_network *network,
 
 				/* Send the data to the ppp_generic module. */
 				skb = ipw_packet_received_skb(data, length);
-				ppp_input(network->ppp_channel, skb);
+				if (skb)
+					ppp_input(network->ppp_channel, skb);
 			} else
 				spin_unlock_irqrestore(&network->lock,
 						flags);
@@ -430,8 +438,8 @@ void ipwireless_network_free(struct ipw_network *network)
 	network->shutting_down = 1;
 
 	ipwireless_ppp_close(network);
-	flush_work_sync(&network->work_go_online);
-	flush_work_sync(&network->work_go_offline);
+	flush_work(&network->work_go_online);
+	flush_work(&network->work_go_offline);
 
 	ipwireless_stop_interrupts(network->hardware);
 	ipwireless_associate_network(network->hardware, NULL);
