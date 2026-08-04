@@ -2128,6 +2128,22 @@ config AUTO_ZRELADDR
 	  0xf8000000. This assumes the zImage being placed in the first 128MB
 	  from start of memory.
 
+config RAM_BASE
+	hex "RAM physical starting address"
+	depends on ARCH_AK39
+	default 0x80000000
+	help
+	  ANYKA RAM physical starting address (in hex), default addr is 0x80000000 for Anyka platform.
+
+config VIDEO_RESERVED_MEM_SIZE
+	hex "Memory reserved for video decoding"
+	depends on ARCH_AK39
+	default 0x1A00000
+	help
+	  ANYKA H.264 decoder requires continuous physical RAM which do NOT cross
+	  32MB boundary (Decoder IP requirement). So we have to reserve enough RAM
+	  for H.264 decoding. Default size is 0x1A00000 (26MB) for AK39xx.
+
 endmenu
 
 menu "CPU Power Management"
