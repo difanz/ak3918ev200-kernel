@@ -193,3 +193,4 @@ obj-$(CONFIG_MAX63XX_WATCHDOG) += max63xx_wdt.o
 obj-$(CONFIG_SOFT_WATCHDOG) += softdog.o
 obj-$(CONFIG_MENF21BMC_WATCHDOG) += menf21bmc_wdt.o
 obj-$(CONFIG_AK_WATCHDOG_TOP) += ak_top_wdt.o
+obj-$(CONFIG_AK_WATCHDOG_RTC) += ak_rtc_wdt.o

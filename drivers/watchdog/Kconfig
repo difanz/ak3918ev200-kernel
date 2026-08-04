@@ -1631,4 +1631,14 @@ config AK_WATCHDOG_TOP
 	help
 	  Say Y here if you are using the top watchdog
 
+config AK_WATCHDOG_RTC
+	tristate "RTC"
+	depends on ARCH_AK
+	depends on RTC_DRV_AK
+	help
+	  Say Y here if you are using the RTC-backed watchdog (drives the
+	  watchdog timeout through the RTC block's own alarm/timer
+	  registers, shared with the AK RTC class driver) instead of the
+	  top-level (system reset controller) watchdog.
+
 endif # WATCHDOG
