@@ -741,6 +741,12 @@ config I2C_AK39_HW
 	help
 	  Say Y here to enable support for I2C driver by chip controller.
 
+config I2C_GPIO_SOFT
+	bool "i2c software simulate by gpios"
+	depends on I2C_ANYKA && I2C_ALGOBIT
+	help
+	  Say Y here to enable support I2C driver by GPIOs simulate
+
 endchoice
 
 comment "External I2C/SMBus adapter drivers"
