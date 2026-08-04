@@ -729,4 +729,14 @@ config KEYBOARD_AKKEY
 	  To compile this driver as a module, choose M here: the
 	  module will be called akgpio_keys.
 
+config KEYBOARD_ADKEY
+	tristate "ADC simulate gpio keys support"
+	depends on ARCH_AK
+	help
+	  This driver implements support for AD-KEY connected
+	  to ADC pin.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called akad-key.
+
 endif
