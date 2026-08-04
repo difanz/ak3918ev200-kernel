@@ -490,7 +490,6 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 	}
 
 	genpd->status = GPD_STATE_POWER_OFF;
-	genpd->power_off_time = ktime_get();
 
 	/* Update PM QoS information for devices in the domain. */
 	list_for_each_entry_reverse(pdd, &genpd->dev_list, list_node) {
