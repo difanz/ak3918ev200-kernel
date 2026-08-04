@@ -1077,3 +1077,166 @@ module_exit(ak39_serial_modexit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("anyka");
 MODULE_DESCRIPTION("Anyka Serial port driver");
+
+
+/************* Console code ************/
+#ifdef CONFIG_SERIAL_AK39_CONSOLE
+
+static struct uart_port *cons_uart;
+
+static inline void ak39_uart_putchar(struct ak39_uart_port *ourport, unsigned char ch)
+{
+	unsigned long regval;
+
+	/* clear the tx internal status */
+	clear_internal_status(ourport, TX_STATUS);
+
+	/* clear a uartx buffer status */
+	clear_uart_buf_status(ourport, TX_STATUS);
+
+	/*to inform the buf is full*/	
+	__raw_writel(ch, ourport->txfifo_base);
+	__raw_writel(0x0, ourport->txfifo_base + 0x3C);
+
+   	/* to clear  TX_th count interrupt */
+	clear_Int_status(ourport, TX_STATUS);
+
+	/* start to transmit */
+	regval = __raw_readl(ourport->port.membase + UART_CONF2);
+	regval &= AKUART_INT_MASK;
+	regval |= (0x1<<4) | (0x1<<16);
+	__raw_writel(regval, ourport->port.membase + UART_CONF2);
+	
+
+	/* wait for tx end */
+	while (!(__raw_readl(ourport->port.membase + UART_CONF2) & (1 << TX_END_STATUS)))
+		;
+}
+
+static inline void ak39_wait_for_txend(struct ak39_uart_port *ourport)
+{
+	unsigned int timeout = 10000;
+
+	/*
+	 * Wait up to 10ms for the character(s) to be sent
+	 */
+    while (!(__raw_readl(ourport->port.membase + UART_CONF2) & (1 << TX_END_STATUS))) {
+        if (--timeout == 0)
+            break;
+        udelay(1);
+    }
+}
+
+static void
+ak39_serial_console_putchar(struct uart_port *port, int ch)
+{
+	struct ak39_uart_port *ourport = to_ourport(port);
+
+	ak39_wait_for_txend(ourport);
+
+	ak39_uart_putchar(ourport, ch);
+}
+
+static void
+ak39_serial_console_write(struct console *co, const char *s, unsigned int count)
+{
+	uart_console_write(cons_uart, s, count, ak39_serial_console_putchar);
+}
+
+static void __init
+ak39_serial_get_options(struct uart_port *port, int *baud, int *parity, int *bits)
+{
+
+#if 0
+	unsigned long regval;
+	struct clk *clk;
+
+	*bits	= 8;
+
+	regval = __raw_readl(port->membase + UART_CONF1);
+
+	if (regval & 0x1<<26) {
+		if (regval & 0x1<<25)
+			*parity = 'e';
+		else
+			*parity = 'o';
+	}
+	else
+		*parity = 'n';
+
+	clk = clk_get(port->dev, "asic_clk");
+	if (!IS_ERR(clk) && clk != NULL)
+		*baud = clk_get_rate(clk) / ((regval & 0xFFFF) + 1);
+
+	printk("calculated baudrate: %d\n", *baud);
+#endif
+}
+
+
+static int __init
+ak39_serial_console_setup(struct console *co, char *options)
+{
+	struct uart_port *port;
+	int baud = 115200;
+	int bits = 8;
+	int parity = 'n';
+	int flow = 'n';
+
+	dbg("ak39_serial_console_setup: co=%p (%d), %s\n", co, co->index, options);
+
+	port = &ak39_serial_ports[co->index].port;
+
+	/* is this a valid port */
+
+	if (co->index == -1 || co->index >= NR_PORTS)
+		co->index = 0;
+
+	dbg("ak39_serial_console_setup: port=%p (%d)\n", port, co->index);
+
+	cons_uart = port;
+
+	/*
+	 * Check whether an invalid uart number has been specified, and
+	 * if so, search for the first available port that does have
+	 * console support.
+	 */
+	if (options)
+		uart_parse_options(options, &baud, &parity, &bits, &flow);
+	else
+		ak39_serial_get_options(port, &baud, &parity, &bits);
+
+	dbg("ak39_serial_console_setup: baud %d\n", baud);
+
+	return uart_set_options(port, co, baud, parity, bits, flow);
+}
+
+
+static struct console ak39_serial_console = {
+	.name		= AK39_SERIAL_NAME,
+	.device		= uart_console_device,
+	.flags		= CON_PRINTBUFFER,
+	.index		= -1,
+	.write		= ak39_serial_console_write,
+	.setup		= ak39_serial_console_setup
+};
+
+
+/* ak39_serial_initconsole
+ *
+ * initialise the console from one of the uart drivers
+*/
+static int ak39_serial_initconsole(void)
+{
+	printk("AK39 console driver initial\n");
+
+	ak39_serial_console.data = &ak39_uart_drv;
+
+	register_console(&ak39_serial_console);
+
+	return 0;
+}
+
+console_initcall(ak39_serial_initconsole);
+
+#endif /* CONFIG_SERIAL_AK39_CONSOLE */
+
