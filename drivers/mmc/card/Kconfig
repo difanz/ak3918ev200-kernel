@@ -76,3 +76,11 @@ config MMC_TEST
 
 	  This driver is only of interest to those developing or
 	  testing a host driver. Most people should say N here.
+
+config SDIO_WIFI
+	tristate "SDIO WIFI support"
+	depends on MMC_ANYKA
+	default n
+	help
+		SDIO function driver for SDIO cards that implements the WIFI
+		module.
