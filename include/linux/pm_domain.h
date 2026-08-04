@@ -14,6 +14,7 @@
 #include <linux/pm.h>
 #include <linux/err.h>
 #include <linux/of.h>
+#include <linux/notifier.h>
 
 enum gpd_status {
 	GPD_STATE_ACTIVE = 0,	/* PM domain is active */
@@ -93,13 +94,17 @@ struct gpd_timing_data {
 	s64 start_latency_ns;
 	s64 save_state_latency_ns;
 	s64 restore_state_latency_ns;
-	s64 break_even_ns;
+	s64 effective_constraint_ns;
+	bool constraint_changed;
+	bool cached_stop_ok;
 };
 
 struct generic_pm_domain_data {
 	struct pm_domain_data base;
 	struct gpd_dev_ops ops;
 	struct gpd_timing_data td;
+	struct notifier_block nb;
+	struct mutex lock;
 	bool need_restore;
 	bool always_on;
 };

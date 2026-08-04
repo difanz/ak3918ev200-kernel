@@ -14,6 +14,31 @@
 
 #ifdef CONFIG_PM_RUNTIME
 
+static int dev_update_qos_constraint(struct device *dev, void *data)
+{
+	s64 *constraint_ns_p = data;
+	s32 constraint_ns = -1;
+
+	if (dev->power.subsys_data && dev->power.subsys_data->domain_data)
+		constraint_ns = dev_gpd_data(dev)->td.effective_constraint_ns;
+
+	if (constraint_ns < 0) {
+		constraint_ns = dev_pm_qos_read_value(dev);
+		constraint_ns *= NSEC_PER_USEC;
+	}
+	if (constraint_ns == 0)
+		return 0;
+
+	/*
+	 * constraint_ns cannot be negative here, because the device has been
+	 * suspended.
+	 */
+	if (constraint_ns < *constraint_ns_p || *constraint_ns_p == 0)
+		*constraint_ns_p = constraint_ns;
+
+	return 0;
+}
+
 /**
  * default_stop_ok - Default PM domain governor routine for stopping devices.
  * @dev: Device to check.
@@ -21,14 +46,52 @@
 bool default_stop_ok(struct device *dev)
 {
 	struct gpd_timing_data *td = &dev_gpd_data(dev)->td;
+	unsigned long flags;
+	s64 constraint_ns;
 
 	dev_dbg(dev, "%s()\n", __func__);
 
-	if (dev->power.max_time_suspended_ns < 0 || td->break_even_ns == 0)
-		return true;
+	spin_lock_irqsave(&dev->power.lock, flags);
 
-	return td->stop_latency_ns + td->start_latency_ns < td->break_even_ns
-		&& td->break_even_ns < dev->power.max_time_suspended_ns;
+	if (!td->constraint_changed) {
+		bool ret = td->cached_stop_ok;
+
+		spin_unlock_irqrestore(&dev->power.lock, flags);
+		return ret;
+	}
+	td->constraint_changed = false;
+	td->cached_stop_ok = false;
+	td->effective_constraint_ns = -1;
+	constraint_ns = __dev_pm_qos_read_value(dev);
+
+	spin_unlock_irqrestore(&dev->power.lock, flags);
+
+	if (constraint_ns < 0)
+		return false;
+
+	constraint_ns *= NSEC_PER_USEC;
+	/*
+	 * We can walk the children without any additional locking, because
+	 * they all have been suspended at this point and their
+	 * effective_constraint_ns fields won't be modified in parallel with us.
+	 */
+	if (!dev->power.ignore_children)
+		device_for_each_child(dev, &constraint_ns,
+				      dev_update_qos_constraint);
+
+	if (constraint_ns > 0) {
+		constraint_ns -= td->start_latency_ns;
+		if (constraint_ns == 0)
+			return false;
+	}
+	td->effective_constraint_ns = constraint_ns;
+	td->cached_stop_ok = constraint_ns > td->stop_latency_ns ||
+				constraint_ns == 0;
+	/*
+	 * The children have been suspended already, so we don't need to take
+	 * their stop latencies into account here.
+	 */
+	return td->cached_stop_ok;
 }
 
 /**

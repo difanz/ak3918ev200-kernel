@@ -11,6 +11,7 @@
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm_domain.h>
+#include <linux/pm_qos.h>
 #include <linux/slab.h>
 #include <linux/err.h>
 #include <linux/sched.h>
@@ -246,6 +247,52 @@ int pm_genpd_poweron(struct generic_pm_domain *genpd)
 #endif /* CONFIG_PM */
 
 #ifdef CONFIG_PM_RUNTIME
+
+static int genpd_dev_pm_qos_notifier(struct notifier_block *nb,
+				     unsigned long val, void *ptr)
+{
+	struct generic_pm_domain_data *gpd_data;
+	struct device *dev;
+
+	gpd_data = container_of(nb, struct generic_pm_domain_data, nb);
+
+	mutex_lock(&gpd_data->lock);
+	dev = gpd_data->base.dev;
+	if (!dev) {
+		mutex_unlock(&gpd_data->lock);
+		return NOTIFY_DONE;
+	}
+	mutex_unlock(&gpd_data->lock);
+
+	for (;;) {
+		struct generic_pm_domain *genpd;
+		struct pm_domain_data *pdd;
+
+		spin_lock_irq(&dev->power.lock);
+
+		pdd = dev->power.subsys_data ?
+				dev->power.subsys_data->domain_data : NULL;
+		if (pdd) {
+			to_gpd_data(pdd)->td.constraint_changed = true;
+			genpd = dev_to_genpd(dev);
+		} else {
+			genpd = ERR_PTR(-ENODATA);
+		}
+
+		spin_unlock_irq(&dev->power.lock);
+
+		if (!IS_ERR(genpd)) {
+			mutex_lock(&genpd->lock);
+			mutex_unlock(&genpd->lock);
+		}
+
+		dev = dev->parent;
+		if (!dev || dev->power.ignore_children)
+			break;
+	}
+
+	return NOTIFY_DONE;
+}
 
 /**
  * __pm_genpd_save_device - Save the pre-suspend state of a device.
@@ -612,6 +659,12 @@ void pm_genpd_poweroff_unused(void)
 }
 
 #else
+
+static inline int genpd_dev_pm_qos_notifier(struct notifier_block *nb,
+					    unsigned long val, void *ptr)
+{
+	return NOTIFY_DONE;
+}
 
 static inline void genpd_power_off_work_fn(struct work_struct *work) {}
 
@@ -1209,6 +1262,14 @@ int __pm_genpd_add_device(struct generic_pm_domain *genpd, struct device *dev,
 	if (IS_ERR_OR_NULL(genpd) || IS_ERR_OR_NULL(dev))
 		return -EINVAL;
 
+	gpd_data = kzalloc(sizeof(*gpd_data), GFP_KERNEL);
+	if (!gpd_data)
+		return -ENOMEM;
+
+	mutex_init(&gpd_data->lock);
+	gpd_data->nb.notifier_call = genpd_dev_pm_qos_notifier;
+	dev_pm_qos_add_notifier(dev, &gpd_data->nb);
+
 	genpd_acquire_lock(genpd);
 
 	if (genpd->status == GPD_STATE_POWER_OFF) {
@@ -1227,26 +1288,34 @@ int __pm_genpd_add_device(struct generic_pm_domain *genpd, struct device *dev,
 			goto out;
 		}
 
-	gpd_data = kzalloc(sizeof(*gpd_data), GFP_KERNEL);
-	if (!gpd_data) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
 	genpd->device_count++;
 
-	dev->pm_domain = &genpd->domain;
 	dev_pm_get_subsys_data(dev);
+
+	mutex_lock(&gpd_data->lock);
+	spin_lock_irq(&dev->power.lock);
+	dev->pm_domain = &genpd->domain;
 	dev->power.subsys_data->domain_data = &gpd_data->base;
 	gpd_data->base.dev = dev;
-	gpd_data->need_restore = false;
 	list_add_tail(&gpd_data->base.list_node, &genpd->dev_list);
+	gpd_data->need_restore = false;
 	if (td)
 		gpd_data->td = *td;
+
+	gpd_data->td.constraint_changed = true;
+	gpd_data->td.effective_constraint_ns = -1;
+	spin_unlock_irq(&dev->power.lock);
+	mutex_unlock(&gpd_data->lock);
+
+	genpd_release_lock(genpd);
+
+	return 0;
 
  out:
 	genpd_release_lock(genpd);
 
+	dev_pm_qos_remove_notifier(dev, &gpd_data->nb);
+	kfree(gpd_data);
 	return ret;
 }
 
