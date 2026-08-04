@@ -1,0 +1,114 @@
+
+/dts-v1/;
+#include "anycloud_ak3918ev200.dtsi"
+#include "anycloud_ak39ev330_norflash.dtsi"
+
+/ {
+	compatible = "anyka,ak3918ev200";
+	model = "Cloud39EV2_AK3918E80PIN_MNBD";
+	version = "V2.00";
+};
+
+&gpio {
+
+	uart0_pins: uart0_pins {
+		anyka,pins = <1 2>;
+		anyka,function = <1>;
+		anyka,pull = <0x00000010>;
+	};
+
+	i2c0_pins: i2c0_pins {
+		anyka,pins = <27 28>;
+		anyka,function = <1>;
+		anyka,pull = <0x00000010>;
+	};
+
+	ircut_pins: ircut_pins {
+		anyka,pins = <41 42>;
+		anyka,function = <0>;
+		anyka,pull = <0x00000010>;
+	};
+
+	gpiokey_pins: gpiokey_pins {
+		anyka,pins = <47>;
+		anyka,function = <0>;
+		anyka,pull = <0x00000010>;
+	};
+};
+
+&rtc {
+	osc-select = <1>;
+	adjust-time = <120000>;
+	status = "okay";
+};
+
+&watchdog {
+	def_heartbeat = <10>;
+	status = "okay";
+};
+
+&uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_pins>;
+	status = "okay";
+};
+
+&i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins>;
+
+	clock-frequency = <312000>;
+	sda-delay = <100>;
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	sensor0: camera@0x30 {
+		compatible = "anyka,sensor0";
+		reg = <0x30>;
+		reset-gpio = <&gpio 0 1>;
+		pwdn-gpio = <&gpio 0xffff 1>;
+		status = "disable";
+	};
+};
+
+&ircut {
+	pinctrl-names = "default";
+	pinctrl-0 = <&ircut_pins>;
+
+	ircut-a = "0";
+	ircut-a-day-level = "0";
+	status = "okay";
+};
+
+&gpiokeys {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-0 = <&gpiokey_pins>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	key_detect {
+		label = "key_detect";
+		gpios = <&gpio 47 1>;
+		linux,code = <116>;
+		debounce-interval = <100>;
+		wakeup-source;
+	};
+};
+
+&mmc0 {
+	status = "disable";
+};
+
+&spi0 {
+	status = "disable";
+};
+
+&spif0 {
+	status = "disable";
+};
+
+&xm25qh64c {
+	status = "okay";
+};
