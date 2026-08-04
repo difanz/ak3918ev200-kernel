@@ -108,6 +108,25 @@ static bool default_power_down_ok(struct dev_pm_domain *pd)
 	s64 min_off_time_ns;
 	s64 off_on_time_ns;
 
+	if (genpd->max_off_time_changed) {
+		struct gpd_link *link;
+
+		/*
+		 * We have to invalidate the cached results for the masters, so
+		 * use the observation that default_power_down_ok() is not
+		 * going to be called for any master until this instance
+		 * returns.
+		 */
+		list_for_each_entry(link, &genpd->slave_links, slave_node)
+			link->master->max_off_time_changed = true;
+
+		genpd->max_off_time_changed = false;
+		genpd->cached_power_down_ok = false;
+		genpd->max_off_time_ns = -1;
+	} else {
+		return genpd->cached_power_down_ok;
+	}
+
 	off_on_time_ns = genpd->power_off_latency_ns +
 				genpd->power_on_latency_ns;
 	/*
@@ -184,6 +203,8 @@ static bool default_power_down_ok(struct dev_pm_domain *pd)
 		if (min_off_time_ns > constraint_ns || min_off_time_ns < 0)
 			min_off_time_ns = constraint_ns;
 	}
+
+	genpd->cached_power_down_ok = true;
 
 	/*
 	 * If the computed minimum device off time is negative, there are no

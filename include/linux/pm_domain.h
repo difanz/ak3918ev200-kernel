@@ -73,6 +73,7 @@ struct generic_pm_domain {
 	struct gpd_dev_ops dev_ops;
 	s64 max_off_time_ns;	/* Maximum allowed "suspended" time. */
 	bool max_off_time_changed;
+	bool cached_power_down_ok;
 	struct device_node *of_node; /* Node in device tree */
 };
 

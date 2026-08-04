@@ -39,11 +39,13 @@
 	ktime_t __start = ktime_get();						\
 	type __retval = GENPD_DEV_CALLBACK(genpd, type, callback, dev);		\
 	s64 __elapsed = ktime_to_ns(ktime_sub(ktime_get(), __start));		\
-	struct generic_pm_domain_data *__gpd_data = dev_gpd_data(dev);		\
-	if (__elapsed > __gpd_data->td.field) {					\
-		__gpd_data->td.field = __elapsed;				\
+	struct gpd_timing_data *__td = &dev_gpd_data(dev)->td;			\
+	if (!__retval && __elapsed > __td->field) {				\
+		__td->field = __elapsed;					\
 		dev_warn(dev, name " latency exceeded, new value %lld ns\n",	\
 			__elapsed);						\
+		genpd->max_off_time_changed = true;				\
+		__td->constraint_changed = true;				\
 	}									\
 	__retval;								\
 })
@@ -212,6 +214,7 @@ int __pm_genpd_poweron(struct generic_pm_domain *genpd)
 		elapsed_ns = ktime_to_ns(ktime_sub(ktime_get(), time_start));
 		if (elapsed_ns > genpd->power_on_latency_ns) {
 			genpd->power_on_latency_ns = elapsed_ns;
+			genpd->max_off_time_changed = true;
 			if (genpd->name)
 				pr_warning("%s: Power-on latency exceeded, "
 					"new value %lld ns\n", genpd->name,
@@ -283,6 +286,7 @@ static int genpd_dev_pm_qos_notifier(struct notifier_block *nb,
 
 		if (!IS_ERR(genpd)) {
 			mutex_lock(&genpd->lock);
+			genpd->max_off_time_changed = true;
 			mutex_unlock(&genpd->lock);
 		}
 
@@ -482,6 +486,7 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 		elapsed_ns = ktime_to_ns(ktime_sub(ktime_get(), time_start));
 		if (elapsed_ns > genpd->power_off_latency_ns) {
 			genpd->power_off_latency_ns = elapsed_ns;
+			genpd->max_off_time_changed = true;
 			if (genpd->name)
 				pr_warning("%s: Power-off latency exceeded, "
 					"new value %lld ns\n", genpd->name,
@@ -1275,6 +1280,7 @@ int __pm_genpd_add_device(struct generic_pm_domain *genpd, struct device *dev,
 		}
 
 	genpd->device_count++;
+	genpd->max_off_time_changed = true;
 
 	dev_pm_get_subsys_data(dev);
 
@@ -1754,6 +1760,7 @@ void pm_genpd_init(struct generic_pm_domain *genpd,
 	genpd->resume_count = 0;
 	genpd->device_count = 0;
 	genpd->max_off_time_ns = -1;
+	genpd->max_off_time_changed = true;
 	genpd->domain.ops.runtime_suspend = pm_genpd_runtime_suspend;
 	genpd->domain.ops.runtime_resume = pm_genpd_runtime_resume;
 	genpd->domain.ops.runtime_idle = pm_generic_runtime_idle;
