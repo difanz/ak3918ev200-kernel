@@ -235,6 +235,9 @@ struct mtd_info {
 	int (*_get_device) (struct mtd_info *mtd);
 	void (*_put_device) (struct mtd_info *mtd);
 
+	/* Get device chip ID. */
+	int (*get_device_id) (struct mtd_info *mtd);
+
 	/* Backing device capabilities for this device
 	 * - provides mmap capabilities
 	 */

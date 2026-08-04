@@ -120,6 +120,17 @@ void gpiod_set_raw_array_value_cansleep(unsigned int array_size,
 					struct gpio_desc **desc_array,
 					int *value_array);
 
+int gpiod_set_drive(struct gpio_desc *desc, int strength);
+int gpiod_get_drive(struct gpio_desc *desc);
+int gpiod_set_pull_polarity(struct gpio_desc *desc, int pullup);
+int gpiod_get_pull_polarity(struct gpio_desc *desc);
+int gpiod_set_pull_enable(struct gpio_desc *desc, int enable);
+int gpiod_get_pull_enable(struct gpio_desc *desc);
+int gpiod_set_input_enable(struct gpio_desc *desc, int enable);
+int gpiod_get_input_enable(struct gpio_desc *desc);
+int gpiod_set_slew_rate(struct gpio_desc *desc, int fast);
+int gpiod_get_slew_rate(struct gpio_desc *desc);
+
 int gpiod_set_debounce(struct gpio_desc *desc, unsigned debounce);
 
 int gpiod_is_active_low(const struct gpio_desc *desc);

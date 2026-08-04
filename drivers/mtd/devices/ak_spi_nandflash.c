@@ -1480,9 +1480,9 @@ static int ak_spinand_read_oob(struct mtd_info *mtd, loff_t from,
 	}
 
 	switch(ops->mode) {
-	case MTD_OOB_PLACE:
-	case MTD_OOB_AUTO:
-	case MTD_OOB_RAW:
+	case MTD_OPS_PLACE_OOB:
+	case MTD_OPS_AUTO_OOB:
+	case MTD_OPS_RAW:
 		break;
 
 	default:
@@ -1706,9 +1706,9 @@ static int ak_spinand_write_oob(struct mtd_info *mtd, loff_t to,
 	}
 
 	switch(ops->mode) {
-	case MTD_OOB_PLACE:
-	case MTD_OOB_AUTO:
-	case MTD_OOB_RAW:
+	case MTD_OPS_PLACE_OOB:
+	case MTD_OPS_AUTO_OOB:
+	case MTD_OPS_RAW:
 		break;
 
 	default:

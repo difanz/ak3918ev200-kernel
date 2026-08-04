@@ -166,6 +166,9 @@
 #define MSR_MAJOR		202
 #define CPUID_MAJOR		203
 
+#define AK_SERIAL_MAJOR	204
+#define AK_SERIAL_MINOR	64
+
 #define OSST_MAJOR		206	/* OnStream-SCx0 SCSI tape */
 
 #define IBM_TTY3270_MAJOR	227

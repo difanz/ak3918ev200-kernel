@@ -188,6 +188,176 @@ int gpiod_get_direction(struct gpio_desc *desc)
 }
 EXPORT_SYMBOL_GPL(gpiod_get_direction);
 
+int gpiod_set_drive(struct gpio_desc *desc, int strength)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->set_drive)
+		return status;
+
+	status = chip->set_drive(chip, offset, strength);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_set_drive);
+
+int gpiod_get_drive(struct gpio_desc *desc)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->get_drive)
+		return status;
+
+	status = chip->get_drive(chip, offset);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_get_drive);
+
+int gpiod_set_pull_polarity(struct gpio_desc *desc, int pullup)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->set_pull_polarity)
+		return status;
+
+	status = chip->set_pull_polarity(chip, offset, pullup);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_set_pull_polarity);
+
+int gpiod_get_pull_polarity(struct gpio_desc *desc)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->get_pull_polarity)
+		return status;
+
+	status = chip->get_pull_polarity(chip, offset);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_get_pull_polarity);
+
+int gpiod_set_pull_enable(struct gpio_desc *desc, int enable)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->set_pull_enable)
+		return status;
+
+	status = chip->set_pull_enable(chip, offset, enable);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_set_pull_enable);
+
+int gpiod_get_pull_enable(struct gpio_desc *desc)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->get_pull_enable)
+		return status;
+
+	status = chip->get_pull_enable(chip, offset);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_get_pull_enable);
+
+int gpiod_set_input_enable(struct gpio_desc *desc, int enable)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->set_input_enable)
+		return status;
+
+	status = chip->set_input_enable(chip, offset, enable);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_set_input_enable);
+
+int gpiod_get_input_enable(struct gpio_desc *desc)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->get_input_enable)
+		return status;
+
+	status = chip->get_input_enable(chip, offset);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_get_input_enable);
+
+int gpiod_set_slew_rate(struct gpio_desc *desc, int fast)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->set_slew_rate)
+		return status;
+
+	status = chip->set_slew_rate(chip, offset, fast);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_set_slew_rate);
+
+int gpiod_get_slew_rate(struct gpio_desc *desc)
+{
+	struct gpio_chip	*chip;
+	unsigned		offset;
+	int			status = -EINVAL;
+
+	chip = gpiod_to_chip(desc);
+	offset = gpio_chip_hwgpio(desc);
+
+	if (!chip->get_slew_rate)
+		return status;
+
+	status = chip->get_slew_rate(chip, offset);
+	return status;
+}
+EXPORT_SYMBOL_GPL(gpiod_get_slew_rate);
+
 /*
  * Add a new chip to the global chips list, keeping the list of chips sorted
  * by base order.

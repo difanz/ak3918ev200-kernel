@@ -108,6 +108,26 @@ struct gpio_chip {
 						unsigned offset);
 	void			(*set)(struct gpio_chip *chip,
 						unsigned offset, int value);
+	int			(*set_drive)(struct gpio_chip *chip,
+						unsigned offset, int strength);
+	int			(*get_drive)(struct gpio_chip *chip,
+						unsigned offset);
+	int			(*set_pull_polarity)(struct gpio_chip *chip,
+						unsigned offset, int pullup);
+	int			(*get_pull_polarity)(struct gpio_chip *chip,
+						unsigned offset);
+	int			(*set_pull_enable)(struct gpio_chip *chip,
+						unsigned offset, int enable);
+	int			(*get_pull_enable)(struct gpio_chip *chip,
+						unsigned offset);
+	int			(*set_input_enable)(struct gpio_chip *chip,
+						unsigned offset, int enable);
+	int			(*get_input_enable)(struct gpio_chip *chip,
+						unsigned offset);
+	int			(*set_slew_rate)(struct gpio_chip *chip,
+						unsigned offset, int fast);
+	int			(*get_slew_rate)(struct gpio_chip *chip,
+						unsigned offset);
 	void			(*set_multiple)(struct gpio_chip *chip,
 						unsigned long *mask,
 						unsigned long *bits);
