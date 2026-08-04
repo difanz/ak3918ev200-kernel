@@ -186,3 +186,8 @@
 &vencoder {
 	status = "okay";
 };
+
+&usb {
+	status = "okay";
+};
+
