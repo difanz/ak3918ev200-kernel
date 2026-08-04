@@ -213,6 +213,9 @@
 /* Energy Micro efm32 SoC */
 #define PORT_EFMUART   100
 
+/* Anyka AK39xx UART */
+#define PORT_AK39   101
+
 #ifdef __KERNEL__
 
 #include <linux/compiler.h>
