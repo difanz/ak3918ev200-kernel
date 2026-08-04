@@ -341,8 +341,13 @@ static struct gpio_sharepin ak_sharepin[] = {
  * Pad 0 is a 1-bit field at CON0 bit 0. Pad 1 occupies CON1 bit 1 alone,
  * and the UART0 mux word puts TX/RX (pads 1/2) at CON1 bits 1 and 2, one
  * bit per pad, leaving bit 0 to pad 0 alone.
+ *
+ * Pad 5 needs both CON0 bits 5 and 6: this pad carries multiple alternate
+ * functions (PWM2/UART1_TXD/JTAG_RTCK/AIN1/TWI2_SCK) whose underlying mux
+ * table entries apply cumulatively rather than as a single row, so the
+ * combined mask is (0x3<<5).
  */
-	{0, AK_SHAREPIN_CON0, (0x3<<0), NULL, 0, NULL, 0,
+	{0, AK_SHAREPIN_CON0, (1<<0), NULL, 0, NULL, 0,
 		-1, NULL, 0, 0, -1, NULL, 0, 0, -1, NULL, 0, 0,
 		AK_PULL_REG0, 0, 1},
 	{1, AK_SHAREPIN_CON0, (1<<1), NULL, 0, NULL, 0,
@@ -357,7 +362,7 @@ static struct gpio_sharepin ak_sharepin[] = {
 	{4, AK_SHAREPIN_CON0, (1<<4), NULL, 0, NULL, 0,
 		-1, NULL, 0, 0, -1, NULL, 0, 0, -1, NULL, 0, 0,
 		AK_PULL_REG0, 4, 1},
-	{5, AK_SHAREPIN_CON0, (1<<6), NULL, 0, NULL, 0,
+	{5, AK_SHAREPIN_CON0, (0x3<<5), NULL, 0, NULL, 0,
 		-1, NULL, 0, 0, -1, NULL, 0, 0, -1, NULL, 0, 0,
 		AK_PULL_REG0, 5, 1},
 	{6, NULL, 0, NULL, 0, NULL, 0,
