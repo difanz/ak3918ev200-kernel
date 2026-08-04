@@ -153,9 +153,6 @@ struct ak_mci_platform_data {
 	int  xfer_mode;
 	int  mci_mode;
 	u32	 max_speed_hz;
-    void (* gpio_init) (const struct gpio_info *);
-    struct gpio_info gpio_cd;       /* card detect pin */
-    struct gpio_info gpio_wp;       /* write protect pin */
 };
 
 struct clk;

@@ -786,3 +786,11 @@ config MMC_MTK
 	  If you have a machine with a integrated SD/MMC card reader, say Y or M here.
 	  This is needed if support for any SD/SDIO/MMC devices is required.
 	  If unsure, say N.
+
+config MMC_ANYKA
+	bool "ANYKA MMC/SD/SDIO Card Interface support"
+	depends on ARCH_AK
+	help
+	  This selects a driver for the MCI interface found in ANYKA's CPUs.
+	  If you have a board based on one of those and a MMC/SD
+	  slot, say Y here. If unsure, say N.
