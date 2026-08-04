@@ -972,6 +972,18 @@ config I2C_XLR
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-xlr.
 
+config I2C_ANYKA
+	bool "Anyka I2C drivers support"
+	depends on ARCH_AK
+	help
+	  Say Y here to enable support for I2C driver for Anyka chip.
+
+config I2C_AK39_HW
+	bool "i2c controller"
+	depends on I2C_ANYKA
+	help
+	  Say Y here to enable support for I2C driver by chip controller.
+
 config I2C_XLP9XX
 	tristate "XLP9XX I2C support"
 	depends on CPU_XLP || COMPILE_TEST
