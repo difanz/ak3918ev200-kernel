@@ -68,3 +68,10 @@ config MMC_TEST
 
 	  This driver is only of interest to those developing or
 	  testing a host driver. Most people should say N here.
+
+config SDIO_WIFI
+	tristate "Anyka SDIO Wi-Fi power glue"
+	depends on MMC_ANYKA
+	help
+	  Platform driver that toggles an SDIO Wi-Fi module's power/enable
+	  GPIOs on probe, remove, suspend and resume.
