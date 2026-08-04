@@ -113,14 +113,15 @@
 #ifdef CONFIG_MACH_AK3918EV200
 /*
  * No extended timer6-10 bank on this part. Use two of the base 5 timers
- * instead: indices 3/4 (this file's 0-based AK_TIMER3/AK_TIMER4, offsets
- * SYSCTRL+0xCC/0xD4).
+ * instead: clocksource on this file's 0-based AK_TIMER4 (SYSCTRL+0xD4,
+ * hardware TIMER5), clockevent on AK_TIMER0 (SYSCTRL+0xB4, hardware
+ * TIMER1, IRQ_TIMER1 = AK_SYSCTRL_IRQ(5)).
  */
-#define AK_CE_CTRL1       		AK_TIMER3_CTRL1
-#define AK_CE_CTRL2       		AK_TIMER3_CTRL2
+#define AK_CE_CTRL1       		AK_TIMER0_CTRL1
+#define AK_CE_CTRL2       		AK_TIMER0_CTRL2
 #define AK_CS_CTRL1       		AK_TIMER4_CTRL1
 #define AK_CS_CTRL2       		AK_TIMER4_CTRL2
-#define AK_CE_TIMER_INDEX		3
+#define AK_CE_TIMER_INDEX		0
 #endif
 
 
@@ -291,6 +292,13 @@ static int parse_and_map_all_timers(struct device_node *node)
 #endif
 #if defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK37E)
 	num_irqs = 10;
+#endif
+#ifdef CONFIG_MACH_AK3918EV200
+	/*
+	 * 5 timers: the base 0xB4-0xD8 bank only, no extended timer6-10
+	 * bank on this part.
+	 */
+	num_irqs = 5;
 #endif
 
 	for (i = 0; i < num_irqs; i++) {
