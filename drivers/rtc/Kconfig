@@ -1628,5 +1628,10 @@ config RTC_DRV_HID_SENSOR_TIME
 	  If this driver is compiled as a module, it will be named
 	  rtc-hid-sensor-time.
 
+config RTC_DRV_AK
+	tristate "AK RTC"
+	depends on ARCH_AK
+	help
+	  If you say Y here you will get support for the onboard AK RTC.
 
 endif # RTC_CLASS
