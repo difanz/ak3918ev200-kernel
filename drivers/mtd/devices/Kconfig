@@ -233,4 +233,15 @@ config BCH_CONST_T
 	default 4
 endif
 
+config MTD_AK_SPINAND
+	tristate "Support Anyka SPI NandFlash chips(Most chips)"
+	depends on SPI_MASTER
+	help
+	  Anyka driver enables access to most SPI Nandflash chips, used for
+	  program and data storage.
+
+	  Set up your spi devices with the right board-specific platform data,
+	  if you want to specify device partitioning or to use a device which
+	  doesn't support the JEDEC ID instruction.
+
 endmenu

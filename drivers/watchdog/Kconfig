@@ -1625,4 +1625,10 @@ config USBPCWATCHDOG
 
 	  Most people will say N.
 
+config AK_WATCHDOG_TOP
+	tristate "TOP"
+	depends on ARCH_AK
+	help
+	  Say Y here if you are using the top watchdog
+
 endif # WATCHDOG

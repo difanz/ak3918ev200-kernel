@@ -1630,6 +1630,20 @@ config SERIAL_STM32_CONSOLE
 	depends on SERIAL_STM32=y
 	select SERIAL_CORE_CONSOLE
 
+config SERIAL_AK_UART
+	tristate "AK serial port support"
+	select SERIAL_CORE
+	depends on ARCH_AK
+	help
+	AK Uart support.
+
+config SERIAL_AK_CONSOLE
+	bool "Console on AK serial port"
+	depends on SERIAL_AK_UART
+	select SERIAL_CORE_CONSOLE
+	help
+	Say Y here if you want enable console support on AK serial port.
+
 endmenu
 
 config SERIAL_MCTRL_GPIO
