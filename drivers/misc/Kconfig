@@ -508,6 +508,17 @@ config AK_DAC_CLOCK
 	help
 	If you say yes here you retrieve the elapsed time in dac driver
 
+config AK_ISP_CHAR
+	bool "Anyka ISP character device (/dev/isp_char)"
+	depends on ARCH_AK39 && AK_ISP_CORE && I2C && SOC_CAMERA
+	help
+	  The interface libakispsdk.so drives the ISP through.  It is the only
+	  caller of the ak_isp_* core and has no other implementation to fall
+	  back on, so it depends on AK_ISP_CORE instead of only warning about
+	  it.  See notes/isp-port.md.
+
+	  If unsure, say N.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
