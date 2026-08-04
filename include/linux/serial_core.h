@@ -216,6 +216,9 @@
 /* Anyka AK39xx UART */
 #define PORT_AK39   101
 
+/* Anyka GPIO UART */
+#define PORT_GPIO   102
+
 #ifdef __KERNEL__
 
 #include <linux/compiler.h>
