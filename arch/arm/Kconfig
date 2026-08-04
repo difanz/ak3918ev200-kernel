@@ -319,6 +319,20 @@ choice
 	default ARCH_VERSATILE if !MMU
 	default ARCH_MULTIPLATFORM if MMU
 
+config ARCH_AK
+	bool "ANYKA ANYCLOUDV500"
+	select CPU_ARM926T
+	select ARCH_REQUIRE_GPIOLIB
+	select CLKDEV_LOOKUP
+	select COMMON_CLK
+	select USE_OF
+	select CLKSRC_OF
+	select CLKSRC_MMIO
+	select GENERIC_CLOCKEVENTS
+	select PINCTRL
+	help
+	  Support for Anyka series Chips platform.
+
 config ARCH_MULTIPLATFORM
 	bool "Allow multiple platforms to be selected"
 	depends on MMU
