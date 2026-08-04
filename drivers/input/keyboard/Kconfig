@@ -600,4 +600,15 @@ config KEYBOARD_AK_KEYPAD
 	  To compile this driver as a module, choose M here: the
 	  module will be called ak_matrix_keypad.
 
+config KEYBOARD_ADKEY
+	tristate "ADC simulate gpio keys support"
+	depends on ARCH_AK39
+#	select INPUT_POLLDEV
+	help
+	  This driver implements support for AD-KEY connected
+	  to ADC pin.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called akad-key.
+
 endif
