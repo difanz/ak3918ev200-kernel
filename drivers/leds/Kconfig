@@ -605,6 +605,12 @@ config LEDS_VERSATILE
 	  This option enabled support for the LEDs on the ARM Versatile
 	  and RealView boards. Say Y to enabled these.
 
+config LEDS_AK39
+	tristate "LED Support for the AK39 LEDS"
+	depends on LEDS_CLASS && ARCH_AK
+	help
+          This option enables support for the AK39 LEDS
+
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"
 
