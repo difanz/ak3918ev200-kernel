@@ -41,7 +41,7 @@ struct uio_mem {
 	struct uio_map		*map;
 };
 
-#define MAX_UIO_MAPS	5
+#define MAX_UIO_MAPS	16
 
 struct uio_portio;
 
@@ -90,6 +90,7 @@ struct uio_device {
  * @open:		open operation for this uio device
  * @release:		release operation for this uio device
  * @irqcontrol:		disable/enable irqs when 0/1 is written to /dev/uioX
+ * @ioctl:		custom ioctl handler for /dev/uioX, driver-defined
  */
 struct uio_info {
 	struct uio_device	*uio_dev;
@@ -105,6 +106,7 @@ struct uio_info {
 	int (*open)(struct uio_info *info, struct inode *inode);
 	int (*release)(struct uio_info *info, struct inode *inode);
 	int (*irqcontrol)(struct uio_info *info, s32 irq_on);
+	int (*ioctl)(struct uio_info *info, unsigned int cmd, unsigned long arg);
 };
 
 extern int __must_check

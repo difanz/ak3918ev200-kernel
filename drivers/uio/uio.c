@@ -490,6 +490,19 @@ static int uio_release(struct inode *inode, struct file *filep)
 	return ret;
 }
 
+static long uio_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
+{
+	struct uio_listener *listener = filep->private_data;
+	struct uio_device *idev = listener->dev;
+	int ret;
+
+	ret = EINVAL;
+	if (idev->info->ioctl)
+		ret = idev->info->ioctl(idev->info, cmd, arg);
+
+	return ret;
+}
+
 static unsigned int uio_poll(struct file *filep, poll_table *wait)
 {
 	struct uio_listener *listener = filep->private_data;
@@ -717,6 +730,7 @@ static const struct file_operations uio_fops = {
 	.poll		= uio_poll,
 	.fasync		= uio_fasync,
 	.llseek		= noop_llseek,
+	.unlocked_ioctl	= uio_ioctl,
 };
 
 static int uio_major_init(void)
