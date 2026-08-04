@@ -333,6 +333,14 @@ config ARCH_AK
 	help
 	  Support for Anyka series Chips platform.
 
+config VIDEO_RESERVED_MEM_SIZE
+	hex "Memory reserved for video decoding/ISP capture"
+	depends on ARCH_AK
+	default 0x1800000
+	help
+	  Size of the device-tree reserved-memory carveout the ION/video-
+	  capture heap uses.
+
 config ARCH_MULTIPLATFORM
 	bool "Allow multiple platforms to be selected"
 	depends on MMU
