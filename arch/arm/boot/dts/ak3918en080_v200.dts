@@ -182,3 +182,7 @@
 	angular-speed = <100>;
 	status = "disable";
 };
+
+&vencoder {
+	status = "okay";
+};
