@@ -244,4 +244,15 @@ config MTD_AK_SPINAND
 	  if you want to specify device partitioning or to use a device which
 	  doesn't support the JEDEC ID instruction.
 
+config MTD_AK_SPIFLASH
+	tristate "Support Anyka SPI Flash chips(Most chips)"
+	depends on SPI_MASTER
+	help
+		Anyka driver enables access to most SPI flash chips, used for
+		program and data storage.
+
+		Set up your spi devices with the right board-specific platform data,
+		if you want to specify device partitioning or to use a device which
+		doesn't support the JEDEC ID instruction.
+
 endmenu

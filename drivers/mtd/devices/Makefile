@@ -18,6 +18,7 @@ obj-$(CONFIG_MTD_BCM47XXSFLASH)	+= bcm47xxsflash.o
 obj-$(CONFIG_MTD_ST_SPI_FSM)    += st_spi_fsm.o
 obj-$(CONFIG_MTD_POWERNV_FLASH)	+= powernv_flash.o
 obj-$(CONFIG_MTD_AK_SPINAND) 	+= ak_spi_nandflash.o
+obj-$(CONFIG_MTD_AK_SPIFLASH) 	+= ak_spiflash.o
 
 
 CFLAGS_docg3.o			+= -I$(src)
