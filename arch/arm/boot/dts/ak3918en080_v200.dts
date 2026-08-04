@@ -34,6 +34,24 @@
 		anyka,function = <0>;
 		anyka,pull = <0x00000010>;
 	};
+
+	mci0_pins: mci0_pins {
+		anyka,pins = <31 32 33>;
+		anyka,function = <1>;
+		anyka,pull = <0x00000010>;
+	};
+
+	spiflash_pins: spiflash_pins {
+		anyka,pins = <25 26 35 36>;
+		anyka,function = <1 1 2 2>;
+		anyka,pull = <0x00000010>;
+	};
+
+	wifi_en_pins: wifi_en_pins {
+		anyka,pins = <34>;
+		anyka,function = <0>;
+		anyka,pull = <0x00000010>;
+	};
 };
 
 &rtc {
@@ -98,15 +116,39 @@
 };
 
 &mmc0 {
-	status = "disable";
+	pinctrl-names = "default";
+	pinctrl-0 = <&mci0_pins>;
+
+	bus-width = <1>;
+	max-frequency = <25000000>;
+	non-removable;
+	status = "okay";
+};
+
+/ {
+	wifi_pwrseq: wifi_pwrseq {
+		compatible = "anyka,sdio-wifi-pwrseq";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_en_pins>;
+
+		enable-gpios = <&gpio 34 0>;
+		power-on-delay-ms = <2000>;
+		power-off-delay-ms = <200>;
+		status = "disable";
+	};
 };
 
 &spi0 {
-	status = "disable";
+	pinctrl-names = "default";
+	pinctrl-0 = <&spiflash_pins>;
+	status = "okay";
 };
 
 &spif0 {
-	status = "disable";
+	spi-max-frequency = <20000000>;
+	spi-tx-bus-width = <4>;
+	spi-rx-bus-width = <4>;
+	status = "okay";
 };
 
 &xm25qh64c {
