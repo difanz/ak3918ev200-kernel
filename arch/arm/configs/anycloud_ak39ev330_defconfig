@@ -1249,6 +1249,8 @@ CONFIG_USB_DEFAULT_PERSIST=y
 #
 # USB Host Controller Drivers
 #
+CONFIG_USB_ANYKA_HCD=y
+CONFIG_USB_AKOTG_HS_HCD=m
 
 #
 # USB Device Class drivers
@@ -1346,6 +1348,7 @@ CONFIG_R8188EU=m
 CONFIG_ION=y
 # CONFIG_ION_TEST is not set
 # CONFIG_ION_DUMMY is not set
+CONFIG_ION_ANYKA=y
 # CONFIG_STAGING_BOARD is not set
 # CONFIG_DGAP is not set
 # CONFIG_GS_FPGABOOT is not set
