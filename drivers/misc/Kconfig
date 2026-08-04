@@ -537,4 +537,23 @@ source "drivers/misc/mic/Kconfig"
 source "drivers/misc/genwqe/Kconfig"
 source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
+
+config AK_ISP_CHAR
+	bool "Anyka ISP character device (/dev/isp_char)"
+	depends on ARCH_AK && AK_ISP_CORE && I2C && SOC_CAMERA
+	help
+	  Character device that the userspace libakispsdk.so ISP library
+	  drives.
+
+	  If unsure, say N.
+
+config AK_INFO_DUMP
+	bool
+	depends on AK_ISP_CHAR
+	default y
+	help
+	  Export the detected sensor id and the configured video-reserved memory
+	  size through /sys/ak_info_dump. Camera userspace uses these values to
+	  select a sensor tuning blob and size its reserved-memory allocator.
+
 endmenu

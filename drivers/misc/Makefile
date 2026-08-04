@@ -56,3 +56,5 @@ obj-$(CONFIG_GENWQE)		+= genwqe/
 obj-$(CONFIG_ECHO)		+= echo/
 obj-$(CONFIG_VEXPRESS_SYSCFG)	+= vexpress-syscfg.o
 obj-$(CONFIG_CXL_BASE)		+= cxl/
+obj-$(CONFIG_AK_ISP_CHAR)	+= ak_isp_char.o
+obj-$(CONFIG_AK_INFO_DUMP)	+= ak_info_dump.o
