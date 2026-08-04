@@ -33,3 +33,11 @@ config ION_TEGRA
 	help
 	  Choose this option if you wish to use ion on an nVidia Tegra.
 
+config ION_ANYKA
+	tristate "Ion for Anyka AK39/AK3918"
+	depends on ARCH_AK && ION
+	help
+	  Choose this option to use the Anyka AK39EV330/AK3918EV200 ION
+	  platform backend, which builds the ION heap set from the "ion"
+	  device-tree node's child heaps.
+
