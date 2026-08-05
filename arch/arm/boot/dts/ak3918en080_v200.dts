@@ -64,6 +64,12 @@
 		anyka,function = <0>;
 		anyka,pull = <0x00000010>;
 	};
+
+	speak_gpio_pins: speak_gpio_pins {
+		anyka,pins = <7>;
+		anyka,function = <0>;
+		anyka,pull = <0x00000010>;
+	};
 };
 
 &rtc {
@@ -195,4 +201,14 @@
 	clocks = <&gclk_asic 18>, <&gclk_asic 20>;
 	clock-names = "camera", "sensor";
 	mclk-mhz = <27>;
+};
+
+&adc_dac {
+	pinctrl-names = "default";
+	pinctrl-0 = <&speak_gpio_pins>;
+
+	speak-gpios = <&gpio 7 1>;
+	speak-gpios-en = <1>;
+	anyka,playback-mode = <1>;
+	status = "okay";
 };
