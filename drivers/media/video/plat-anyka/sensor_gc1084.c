@@ -333,13 +333,14 @@ static int gc1084_set_power_on(const int pwdn_pin, const int reset_pin)
 	ak_sensor_set_pin_as_gpio(pwdn_pin);
 	ak_sensor_set_pin_dir(pwdn_pin, 1);
 	ak_sensor_set_pin_level(pwdn_pin, !SENSOR_PWDN_LEVEL);
+	ak_sensor_mdelay(10);
 
 	ak_sensor_set_pin_as_gpio(reset_pin);
 	ak_sensor_set_pin_dir(reset_pin, 1);
 	ak_sensor_set_pin_level(reset_pin, SENSOR_RESET_LEVEL);
 	ak_sensor_mdelay(10);
 	ak_sensor_set_pin_level(reset_pin, !SENSOR_RESET_LEVEL);
-	ak_sensor_mdelay(10);
+	ak_sensor_mdelay(20);
 
 	return 0;
 }
