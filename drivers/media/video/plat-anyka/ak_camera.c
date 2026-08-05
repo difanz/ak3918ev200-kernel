@@ -824,7 +824,6 @@ static int set_sensor_interface(struct device *dev, int sensor_interface)
 {
 	switch (sensor_interface) {
 	case DVP_INTERFACE:
-		ak_group_config(ePIN_AS_CAMERA);
 		return 0;
 	case MIPI_INTERFACE:
 		/*
