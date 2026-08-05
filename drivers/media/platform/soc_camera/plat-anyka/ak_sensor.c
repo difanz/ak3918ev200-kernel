@@ -12,6 +12,8 @@
 #include <linux/i2c.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/v4l2-mediabus.h>
 #include <linux/videodev2.h>
 
@@ -478,19 +480,50 @@ static struct v4l2_subdev_ops aksensor_subdev_ops = {
 /*
  * i2c_driver function
  */
+/*
+ * Read the sensor reset/pwdn GPIOs from the DT node. An unwired pin
+ * (pwdn = <&gpio 0xffff 1>) resolves to a negative gpio and is kept as
+ * the 0xffff "none" sentinel the power sequence expects.
+ */
+static struct aksensor_camera_info *aksensor_parse_of(struct i2c_client *client)
+{
+	struct device_node *np = client->dev.of_node;
+	struct aksensor_camera_info *info;
+	int gpio;
+
+	info = devm_kzalloc(&client->dev, sizeof(*info), GFP_KERNEL);
+	if (!info)
+		return NULL;
+
+	gpio = of_get_named_gpio(np, "reset-gpio", 0);
+	info->pin_reset = (gpio >= 0) ? gpio : 0xffff;
+
+	gpio = of_get_named_gpio(np, "pwdn-gpio", 0);
+	info->pin_pwdn = (gpio >= 0) ? gpio : 0xffff;
+
+	return info;
+}
+
 static int aksensor_probe(struct i2c_client *client,
 			const struct i2c_device_id *did)
 {
 	struct aksensor_priv        *priv;
 	struct soc_camera_link	*icl = (struct soc_camera_link *)soc_camera_i2c_to_desc(client);
 	struct i2c_adapter        *adapter = to_i2c_adapter(client->dev.parent);
+	struct aksensor_camera_info *info;
 	int ret;
 	int width, height;
 	int w, h;
 
 	SENDBG("entry %s\n", __func__);
 
-	if (!icl || !icl->priv) {
+	if (client->dev.of_node) {
+		info = aksensor_parse_of(client);
+		if (!info)
+			return -ENOMEM;
+	} else if (icl && icl->priv) {
+		info = icl->priv;
+	} else {
 		dev_err(&client->dev, "AKSENSOR: missing platform data!\n");
 		return -EINVAL;
 	}
@@ -505,9 +538,9 @@ static int aksensor_probe(struct i2c_client *client,
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv) {
 		return -ENOMEM;
-	}	
+	}
 
-	priv->info = icl->priv;
+	priv->info = info;
 	v4l2_i2c_subdev_init(&priv->subdev, client, &aksensor_subdev_ops);
 
 	ret = aksensor_video_probe(client);
@@ -567,9 +600,16 @@ static const struct i2c_device_id aksensor_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, aksensor_id);
 
+static const struct of_device_id aksensor_of_match[] = {
+	{ .compatible = "anyka,sensor0" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, aksensor_of_match);
+
 static struct i2c_driver aksensor_i2c_driver = {
 	.driver = {
 		.name = "aksensor",
+		.of_match_table = aksensor_of_match,
 	},
 	.probe    = aksensor_probe,
 	.remove   = aksensor_remove,
