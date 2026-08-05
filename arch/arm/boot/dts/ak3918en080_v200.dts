@@ -70,6 +70,12 @@
 		anyka,function = <0>;
 		anyka,pull = <0x00000010>;
 	};
+
+	dvp0_8bits_pins: dvp0_8bits_pins {
+		anyka,pins = <64 65 66 67 68 69 70 71 72 73 74 75>;
+		anyka,function = <0>;
+		anyka,pull = <0x00000001>;
+	};
 };
 
 &rtc {
@@ -102,9 +108,15 @@
 	sensor0: camera@0x30 {
 		compatible = "anyka,sensor0";
 		reg = <0x30>;
-		reset-gpio = <&gpio 0 1>;
+		reset-gpio = <&gpio 49 1>;
 		pwdn-gpio = <&gpio 0xffff 1>;
-		status = "disable";
+		status = "okay";
+
+		port {
+			sensor_ep: endpoint {
+				remote-endpoint = <&isp_ep>;
+			};
+		};
 	};
 };
 
@@ -198,9 +210,19 @@
 };
 
 &isp {
+	pinctrl-names = "default";
+	pinctrl-0 = <&dvp0_8bits_pins>;
+
 	clocks = <&gclk_asic 18>, <&gclk_asic 20>;
 	clock-names = "camera", "sensor";
 	mclk-mhz = <27>;
+	status = "okay";
+
+	port {
+		isp_ep: endpoint {
+			remote-endpoint = <&sensor_ep>;
+		};
+	};
 };
 
 &adc_dac {
