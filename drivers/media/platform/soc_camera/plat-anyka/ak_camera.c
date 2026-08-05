@@ -19,6 +19,7 @@
 #include <linux/sched.h>
 #include <linux/clk.h>
 #include <linux/of.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
@@ -70,6 +71,9 @@ struct ak_camera_dev {
 	struct clk	*cis_sclk;		// cis_sclk clock for sensor
 	unsigned long	mclk;
 	unsigned int	irq;
+
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_default;	/* DVP data/clock/mclk pads */
 	struct list_head capture;
 	/* members to manage the dma and buffer*/
 	spinlock_t		lock;  /* for videobuf_queue , passed in init_videobuf */
@@ -843,14 +847,28 @@ static void set_sensor_cis_sclk(unsigned int cis_sclk)
 			__func__, cis_sclk, peri_pll, cis_sclk_div);
 }
 
-static int set_sensor_interface(struct device *dev, int sensor_interface)
+static int set_sensor_interface(struct ak_camera_dev *pcdev,
+				int sensor_interface)
 {
+	struct device *dev = pcdev->soc_host.v4l2_dev.dev;
+	int ret;
+
 	switch (sensor_interface) {
 	case DVP_INTERFACE:
-		/*
-		 * The DVP camera group occupies CON2 bits 0-19 (mask
-		 * 0x000fffff, value 0x00000000 selects the camera function).
-		 */
+		/* Mux the DVP pads to the camera function. */
+		if (pcdev->pins_default) {
+			ret = pinctrl_select_state(pcdev->pinctrl,
+						   pcdev->pins_default);
+			if (ret) {
+				dev_err(dev,
+					"failed to select DVP pinmux: %d\n",
+					ret);
+				return ret;
+			}
+		} else {
+			dev_warn(dev,
+				 "no DVP pinctrl; assuming pads pre-muxed\n");
+		}
 		return 0;
 	case MIPI_INTERFACE:
 		/*
@@ -948,7 +966,7 @@ static int ak_camera_add_device(struct soc_camera_device *icd)
 //	printk("ISP CLOCK ENABLE \n");
 	REG32(CLOCK_PERI_PLL_CTRL1) &=~(0x01<<25);
 
-	ret = set_sensor_interface(icd->parent, sensor_interface);
+	ret = set_sensor_interface(pcdev, sensor_interface);
 	if (ret) {
 		clk_disable(pcdev->clk);
 		clk_disable(pcdev->cis_sclk);
@@ -1622,6 +1640,25 @@ static int ak_camera_probe(struct platform_device *pdev)
 	}
 	of_property_read_u32(pdev->dev.of_node, "bus-flags",
 			      (u32 *)&pcdev->bus_flags);
+
+	/*
+	 * DVP pin-mux. The "default" state is applied by the driver core at
+	 * probe; keep the handle so set_sensor_interface() can re-assert it
+	 * when a DVP sensor is opened. Absent pinctrl is not fatal.
+	 */
+	pcdev->pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(pcdev->pinctrl)) {
+		dev_warn(&pdev->dev, "no pinctrl for DVP pads\n");
+		pcdev->pinctrl = NULL;
+		pcdev->pins_default = NULL;
+	} else {
+		pcdev->pins_default = pinctrl_lookup_state(pcdev->pinctrl,
+							   PINCTRL_STATE_DEFAULT);
+		if (IS_ERR(pcdev->pins_default)) {
+			dev_warn(&pdev->dev, "no default DVP pinctrl state\n");
+			pcdev->pins_default = NULL;
+		}
+	}
 
 	/*
 	  * request irq
