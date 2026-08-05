@@ -589,10 +589,7 @@ int  _isp_enable_buffer(void)
 }
 
 int  ak_isp_vo_enable_buffer(enum buffer_id  id)
-{    
-	unsigned long cmd = 0;
-	int i, cnt;
-
+{
 	if(!isp)
 		return 0;
 	
@@ -614,20 +611,6 @@ int  ak_isp_vo_enable_buffer(enum buffer_id  id)
         break;
     }
     isp_dbg("%s :id=%d, list=0x%x\n", __func__, id, isp->enable_buffer_list);
-
-	cmd = REG32(isp->base + ISP_ADDR_EN_ADDR);  
-	cmd = (cmd>>ISP_ADDR_EN_SHIFT)&0x0f;
-	cnt = 0;
-	for(i=0; i<4; i++)
-	{
-		if(cmd&0x1)
-			cnt++;
-		cmd = cmd>>1;
-	}
-	if(cnt<=1) {
-		//printk("vo enable\n");
-		_isp_enable_buffer();
-	}
 
     return 0;
 }
