@@ -570,7 +570,6 @@ static int irq_handle_single_mode(struct videobuf_buffer *vb, struct ak_camera_d
 		ispdrv_vi_start_capturing();
 	} else {
 		ispdrv_vo_disable_buffer(BUFFER_ONE);
-		ispdrv_vi_stop_capturing();
 		pcdev->list_state = LIST_ZERO;
 	}
 
@@ -619,8 +618,6 @@ static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 
 	next = pcdev->capture.next;
 	if (next == &pcdev->capture) {
-		printk("Error, camera no buffer, but run to irq\n");
-		ispdrv_vi_stop_capturing();
 		return 0;
 	}
 
