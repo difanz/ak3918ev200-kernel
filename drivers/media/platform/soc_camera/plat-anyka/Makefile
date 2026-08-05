@@ -20,6 +20,7 @@ obj-$(CONFIG_SENSOR_GC1084)   += sensor_gc1084.o
 # ISP2 sensor framework.  This must follow the stack-B sensor drivers above;
 # i2c_add_driver() can synchronously probe an already registered client.
 obj-$(CONFIG_AK_ISP_CHAR)     += ak_sensor.o ak_sensor_common.o ak_sensor_i2c.o
+obj-$(CONFIG_AK_ISP_CHAR)     += ispdrv_interface.o
 
 # ISP core. Anyka ships this as a prebuilt libispdrv.a; we build it from the
 # SDK sources instead.
@@ -29,4 +30,4 @@ obj-$(CONFIG_AK_ISP_CORE)     += ak39_isp2.o ak39_isp2_3a.o
 # ak_isp_char.c misc-device module namespace. Neither has any platform-
 # specific content, so both live here rather than under an arch/arm
 # machine directory.
-obj-$(CONFIG_VIDEO_AK)         += ak_camera.o ispdrv_interface.o
+obj-$(CONFIG_VIDEO_AK)         += ak_camera.o
