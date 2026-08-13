@@ -550,6 +550,43 @@ out:
 	return err;
 }
 
+/*
+ * Walk the chain without touching it. Must be called with the FAT locked, so
+ * that what it accepts is still true when the caller frees it.
+ */
+static int fat_chain_verify(struct inode *inode, int cluster)
+{
+	struct super_block *sb = inode->i_sb;
+	struct msdos_sb_info *sbi = MSDOS_SB(sb);
+	struct fat_entry fatent;
+	unsigned long left = sbi->max_cluster;
+	int err = 0;
+
+	fatent_init(&fatent);
+	do {
+		/* No chain visits a cluster twice, so none is longer. */
+		if (left-- == 0) {
+			fat_fs_error(sb, "%s: cluster chain does not terminate",
+				     __func__);
+			err = -EIO;
+			break;
+		}
+		cluster = fat_ent_read(inode, &fatent, cluster);
+		if (cluster < 0) {
+			err = cluster;
+			break;
+		} else if (cluster == FAT_ENT_FREE) {
+			fat_fs_error(sb, "%s: deleting FAT entry beyond EOF",
+				     __func__);
+			err = -EIO;
+			break;
+		}
+	} while (cluster != FAT_ENT_EOF);
+	fatent_brelse(&fatent);
+
+	return err;
+}
+
 int fat_free_clusters(struct inode *inode, int cluster)
 {
 	struct super_block *sb = inode->i_sb;
@@ -563,6 +600,10 @@ int fat_free_clusters(struct inode *inode, int cluster)
 	nr_bhs = 0;
 	fatent_init(&fatent);
 	lock_fat(sbi);
+	/* Nothing is freed until the whole chain is known to be sound. */
+	err = fat_chain_verify(inode, cluster);
+	if (err)
+		goto error;
 	do {
 		cluster = fat_ent_read(inode, &fatent, cluster);
 		if (cluster < 0) {
