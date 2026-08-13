@@ -709,7 +709,6 @@ static unsigned long get_adc2_osr_div(struct ak39_codec *codec, unsigned char *m
     unsigned long SR_save, out_sr=0;
     signed long a, b;
 	unsigned long clk168m;
-	unsigned long perfect_pll;
 	
 	clk168m = ak39_codec_get_asic_pll_clk(codec);
     max_div = 0x40;
@@ -739,14 +738,9 @@ static unsigned long get_adc2_osr_div(struct ak39_codec *codec, unsigned char *m
         {
             SR_save = out_sr;
             *mclkdiv = k;
-
-			perfect_pll = OSR_value * (k+1) *des_sr;
         }
     }
 
-	printk("adc: perfect asic pll clk is:%lu, actual sample rate is %lu.\n", perfect_pll, SR_save);
-
-	printk( "---ADC clk168m = %lu, SR_save = %lu. des_sr = %lu, div = %d\n",clk168m, SR_save, des_sr, *mclkdiv);
 	return SR_save;
 }
 
@@ -757,9 +751,9 @@ static unsigned long get_adc2_osr_div(struct ak39_codec *codec, unsigned char *m
  * @input   des_sr: destination sample rate
  * @output  osrindex: OSR index
  * @output  mclkdiv: mclk div
- * @return  void
+ * @return  the achieved sample rate
  */
-static void get_dac_osv_div(struct ak39_codec *codec, unsigned char *osrindex,
+static unsigned long get_dac_osv_div(struct ak39_codec *codec, unsigned char *osrindex,
 	   	unsigned char *mclkdiv, unsigned long des_sr)
 {
     const unsigned short OSR_table[8] = 
@@ -805,6 +799,7 @@ static void get_dac_osv_div(struct ak39_codec *codec, unsigned char *osrindex,
 	//WARN(1, "111");
 	printk("perfect asic pll clk is:%lu, actual sample rate is %lu.\n", perfect_pll, SR_save);
 
+	return SR_save;
 }
 
 
@@ -1159,14 +1154,15 @@ void ak39_codec_dac_close(struct ak_codec_dai *dai)
  * @author 
  * @date   
  * @param[in]  samplerate: desired sample rate
- * @return  void
+ * @return  the sample rate the DAC divider search actually achieved
  */
-void ak39_codec_set_dac_samplerate(struct ak_codec_dai *dai, unsigned int samplerate)
+unsigned long ak39_codec_set_dac_samplerate(struct ak_codec_dai *dai, unsigned int samplerate)
 {
 	unsigned char osr, mclkdiv;
+	unsigned long out_sr;
 	struct ak39_codec *codec = to_ak39_codec(dai);
 
-	get_dac_osv_div(codec, &osr, &mclkdiv, samplerate);
+	out_sr = get_dac_osv_div(codec, &osr, &mclkdiv, samplerate);
 
 	//disable HCLK, and disable DAC interface
 	REG32(codec->analog_ctrl_base + HIGHSPEED_CLOCK_CTRL_REG) &= ~(DAC_HCLK_EN);
@@ -1200,6 +1196,8 @@ void ak39_codec_set_dac_samplerate(struct ak_codec_dai *dai, unsigned int sample
 	//enable HCLK, and enable DAC interface
     REG32(codec->analog_ctrl_base + HIGHSPEED_CLOCK_CTRL_REG) |= (DAC_HCLK_EN);
 	REG32(codec->analog_ctrl_base + DAC_CONFIG_REG) |= (DAC_CTRL_EN);
+
+	return out_sr;
 }
 
 /**
@@ -1423,6 +1421,12 @@ void ak39_codec_speak_on(struct ak39_codec *codec, bool bOn)
 }
 
 
+static void ak39_codec_speaker_enable(struct ak_codec_dai *dai, bool on)
+{
+	ak39_codec_speak_on(to_ak39_codec(dai), on);
+}
+
+
 /**
  * @brief  when playback start, ak39_codec_playback_start must be called to start output channel
  * @author  Cheng JunYi
@@ -1433,6 +1437,8 @@ void ak39_codec_speak_on(struct ak39_codec *codec, bool bOn)
 static void ak39_codec_playback_start(struct ak_codec_dai *dai)
 {
 	struct ak39_codec *codec = to_ak39_codec(dai);
+
+	ak39_codec_speak_on(codec, true);
 
 	if(codec->mixer_ch_duration[MIXER_ADDR_PLAY_DURATION] == CHNLDURATION_EVEROPEN)
 		return;
@@ -1457,7 +1463,9 @@ void ak39_start_to_play(struct ak_codec_dai *dai,
 static void ak39_codec_playback_stop(struct ak_codec_dai *dai)
 {
 	struct ak39_codec *codec = to_ak39_codec(dai);
-	
+
+	ak39_codec_speak_on(codec, false);
+
 	//if we want to open some channel for ever, return
 	if(codec->mixer_ch_duration[MIXER_ADDR_PLAY_DURATION] == CHNLDURATION_EVEROPEN)
 		return;
@@ -1971,81 +1979,6 @@ static int codec_route_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_va
 	return change;
 }
 
-/***************************ROUTE**************************/
-#define AK39PCM_AEC(xname, xindex, addr) \
-{ .iface = SNDRV_CTL_ELEM_IFACE_MIXER, \
-  .access = SNDRV_CTL_ELEM_ACCESS_READWRITE, \
-  .name = xname, \
-  .index = xindex, \
-  .info = codec_aec_info, \
-  .get = codec_aec_get, \
-  .put = codec_aec_put, \
-  .private_value = addr \
-}
-
-/**
- * @brief  info callback
- * @author  Cheng Mingjuan
- * @date   
- * @return void
- */
-static int codec_aec_info(struct snd_kcontrol *kcontrol,
-				 struct snd_ctl_elem_info *uinfo)
-{
-	//int port = kcontrol->private_value;
-	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
-	uinfo->count = 1;
-
-	printk(  "get the aec info \n" );
-	uinfo->value.integer.min = 0;
-	uinfo->value.integer.max = 10;
-
-	return 0;
-}
-
-/**
- * @brief  get callback
- * @author  Cheng Mingjuan
- * @date   
- * @return void
- */
-static int codec_aec_get(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	struct ak_codec_dai *dai = snd_kcontrol_chip(kcontrol);
-	//struct ak39_codec *codec = container_of(dai, struct ak39_codec, dai);
-
-	//int port = kcontrol->private_value;
-	ucontrol->value.integer.value[0] = dai->aec_flag;
-	//printk("%s enter, %d\n", __func__, ucontrol->value.integer.value[0]);
-	return 0;
-}
-
-/**
- * @brief  put callback
- * @author  Cheng Mingjuan
- * @date   
- * @return void
- */
-static int codec_aec_put(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	struct ak_codec_dai *dai = snd_kcontrol_chip(kcontrol);
-	//struct ak39_codec *codec = container_of(dai, struct ak39_codec, dai);
-
-	int src = ucontrol->value.integer.value[0];
-	int port = kcontrol->private_value;
-
-
-	printk("%s enter, %d  %d \n", __func__, port, src);
-	dai->aec_flag = src;
-
-	return 1;
-}
-
-
-
-
 static struct ak_proc_entry codec_pentries[] = {
 };
 
@@ -2059,7 +1992,6 @@ static struct snd_kcontrol_new codec_controls[] = {
 	AK39PCM_SWITCH("HPDet switch", 0, MIXER_ADDR_HPDET),
 	AK39PCM_DAC_OUT_MODE("DAC out mode", 0, MIXER_ADDR_OUTMODE_DAC),
 	AK39PCM_OUTPUTCHNL_DURATION("duration of output channel", 0, MIXER_ADDR_PLAY_DURATION),
-	AK39PCM_AEC("Set the aec", 0, 0),
 };
 
 struct ak_codec_ops ak39_codec_ops = {
@@ -2073,6 +2005,7 @@ struct ak_codec_ops ak39_codec_ops = {
 	.set_adc_channels	= ak39_codec_set_adc2_channels,
 	.playback_start		= ak39_codec_playback_start,
 	.playback_end		= ak39_codec_playback_stop,
+	.speaker_enable		= ak39_codec_speaker_enable,
 	.capture_start		= ak39_codec_capture_start,
 	.capture_end		= ak39_codec_capture_stop,
 	.start_to_play		= ak39_start_to_play,

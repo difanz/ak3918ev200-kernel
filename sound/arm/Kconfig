@@ -52,12 +52,6 @@ config SPKHP_SWITCH_UEVENT
 	
 endchoice
 
-config SUPPORT_AEC
-	bool "Support Accoustic Echo Cancllation"
-	depends on SND_AK_PCM
-	help
-		Support Accoustic Echo Cancllation.
-	  	  
 config SND_ARMAACI
 	tristate "ARM PrimeCell PL041 AC Link support"
 	depends on ARM_AMBA

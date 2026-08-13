@@ -34,6 +34,7 @@
 #include <linux/irq.h>
 #include <linux/workqueue.h>
 #include <asm/bitops.h>
+#include <linux/atomic.h>
 #include <sound/core.h>
 #include <sound/control.h>
 #include <sound/tlv.h>
@@ -49,7 +50,6 @@
 #include <linux/vmalloc.h>
 #include <linux/dma-mapping.h>
 #include <linux/reboot.h>
-#include <mach-anyka/aec_interface.h>
 
 //#define CONFIG_PCM_DUMP              1
 #define AK_PCM_DELAY_CLOSE_DAC
@@ -87,17 +87,6 @@ struct snd_akpcm {
 #ifdef CONFIG_CPU_FREQ
 	struct notifier_block	freq_transition;
 #endif
-
-//#ifdef CONFIG_SUPPORT_AEC
-	struct tasklet_struct capture_aec_tasklet;
-	struct tasklet_struct playback_aec_tasklet;
-	T_AEC_INPUT p_aecin;
-	T_AEC_BUF	p_aecbufs;
-	T_VOID		*pfilter;
-	unsigned char *playback_data;
-	unsigned char *capture_data;
-	unsigned char *temp;
-//#endif
 
 #ifdef CONFIG_PCM_DUMP
 	void*				pcmDumpDataBuffer;
@@ -142,11 +131,8 @@ static unsigned long long dac_clock;
 #define akpcm_playback_buf_bytes_max     (64*1024)
 #define akpcm_playback_period_bytes_min  512
 
-#ifdef CONFIG_SUPPORT_AEC
+/* l2_combuf_dma() moves one period per L2 common buffer, which is 512 bytes. */
 #define akpcm_playback_period_bytes_max  512
-#else
-#define akpcm_playback_period_bytes_max  32768
-#endif
 
 #define akpcm_playback_period_aligned		128
 #define akpcm_playback_periods_min       4
@@ -164,15 +150,6 @@ static unsigned long long dac_clock;
 #ifdef CONFIG_PCM_DUMP
 #define akpcm_dump_data_size           (2*1024*1024)
 #endif
-
-
-//#ifdef CONFIG_SUPPORT_AEC
-#define		AEC_NN			128
-#define		AEC_TAIL		(AEC_NN*10)
-#define		AEC_CHANNELS	1
-#define		AEC_SAMPLERATE 	8000
-#define		AEC_BITSPERSAMPLE 16
-//#endif
 
 
  static DEFINE_MUTEX(reboot_lock);
@@ -208,135 +185,6 @@ void ak_close_dac_timer(unsigned long data)
 	}
 }
 
-//#ifdef CONFIG_SUPPORT_AEC
-void  ak37pcm_playback_aec(unsigned long data)
-{
-	struct snd_akpcm *ak37pcm = (struct snd_akpcm *)data;
-	struct snd_pcm_substream *substream = ak37pcm->playbacksubstrm;
-	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_pcm_substream *capture_substream = ak37pcm->capturesubstrm;
-	struct snd_pcm_runtime *capture_runtime;
-	
-	unsigned int	playback_pos;
-	unsigned long period_bytes = frames_to_bytes(runtime,runtime->period_size);
-	unsigned long buffer_bytes = frames_to_bytes(runtime,runtime->buffer_size);
-	
-
-	//Check if the capture substream is opened yet
-	if (!capture_substream)
-		return;
-
-	//FIXME: What is the relationship between substream and its belonging runtime
-	capture_runtime = capture_substream->runtime;
-	if (!capture_runtime)
-		return;
-
-	//Check if the AEC library has been successfully opened.
-	if (runtime->rate != AEC_SAMPLERATE || period_bytes != akpcm_playback_period_bytes_min || !ak37pcm->pfilter)
-		return;
-
-	//Make sure that the DMA of capturing is running
-	if (test_bit(0,&ak37pcm->captureStrmDMARunning) && 
-			test_bit(1,&ak37pcm->captureStrmDMARunning)) {
-
-		//FIXME: Figure out the position of last period that has just been finished		
-		if (ak37pcm->PlaybackCurrPos <= 0) {
-			playback_pos = buffer_bytes	- period_bytes;
-		} else {
-			playback_pos = ak37pcm->PlaybackCurrPos - period_bytes;
-		}
-
-		//Something must go wrong.
-		if (playback_pos % akpcm_playback_period_bytes_min != 0 || playback_pos < 0)
-			printk("ak37pcm_playback_aec==>playback_pos=%d\n", playback_pos);
-
-		/*
-		  * FIXME: The AEC Lib just supports single channel by now. But we make a trick here by
-		  * cheating the AEC Lib. Tha input data for the AEC Lib is actully stereo. By doing that, the
-		  * system load could be lowered a little bit.
-		  */
-#if 0
-		short *to = ak37pcm->playback_data;
-		short *from = vaddr + playback_pos;
-		int count = period_bytes / channels / 2;
-		if (count != AEC_NN) 
-			printk("ak37pcm_playback_aec==>count=%d\n", count);
-		for (i = 0; i < count; i++) {
-			to[i] = from[i * 2];
-		}
-#endif
-		/*We assume the channels is stereo basing on the truth */
-		#if 0
-		ak37pcm->p_aecbufs.buf_near = ak37pcm->p_aecbufs.buf_out = NULL;
-		ak37pcm->p_aecbufs.len_near = ak37pcm->p_aecbufs.len_out = 0;
-	       ak37pcm->p_aecbufs.buf_far = vaddr + playback_pos;
-		ak37pcm->p_aecbufs.len_far = period_bytes / channels;
-		ret = AECLib_Control(ak37pcm->pfilter, &ak37pcm->p_aecbufs);
-		if (ret < 0)
-			printk("p=%d\n", ret);
-		#endif
-	}	
-}
-
-void ak37pcm_capture_aec(unsigned long data)
-{
-	struct snd_akpcm *ak37pcm = (struct snd_akpcm *)data;
-	struct snd_pcm_substream *substream = ak37pcm->capturesubstrm;
-	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct snd_pcm_substream *playback_substream = ak37pcm->playbacksubstrm;
-	struct snd_pcm_runtime *playback_runtime;
-
-	//dma_addr_t vaddr = runtime->dma_area;
-	dma_addr_t paddr = runtime->dma_addr;
-	int period_bytes =  frames_to_bytes(runtime,runtime->period_size);
-	int buffer_bytes = frames_to_bytes(runtime,runtime->buffer_size);
-	int capture_pos;
-	int ret;
-
-	//Check if the playback substream is open
-	if (!playback_substream)
-		return;
-
-	//FIXME: What is the relationship between substream and its belonging runtime
-	playback_runtime = playback_substream->runtime;
-	if (!playback_runtime)
-		return;
-
-	/*
-	 *Check if the AEC library has been successfully opened.
-	 */
-	if (runtime->rate != AEC_SAMPLERATE || period_bytes != akpcm_capture_period_bytes_min || !ak37pcm->pfilter)
-		return;
-
-//	if (test_bit(0,&ak37pcm->playbackStrmDMARunning) && 
-//		test_bit(1,&ak37pcm->playbackStrmDMARunning)) 
-	{
-
-		if (ak37pcm->CaptureCurrPos == 0) {
-			capture_pos = buffer_bytes  - period_bytes;
-		} else {
-			capture_pos = ak37pcm->CaptureCurrPos - period_bytes;
-		}
-#if 0
-		ak37pcm->p_aecbufs.buf_near = vaddr + capture_pos;
-		ak37pcm->p_aecbufs.len_near =  period_bytes;
-        	ak37pcm->p_aecbufs.buf_out = ak37pcm->p_aecbufs.buf_near;
-		ak37pcm->p_aecbufs.len_out = ak37pcm->p_aecbufs.len_near;
-       	ak37pcm->p_aecbufs.buf_far = NULL;
-		ak37pcm->p_aecbufs.len_far = 0;
-		if (ak37pcm->p_aecbufs.len_near != akpcm_capture_period_bytes_min)
-				printk("ak37pcm_capture_aec==>len_near=%d\n", period_bytes);
-
-		ret = AECLib_Control(ak37pcm->pfilter, &ak37pcm->p_aecbufs);
-		if (ret < 0)
-			printk("c=%d\n", ret);
-#endif
-		ak37pcm->p_aecbufs.buf_out = phys_to_virt(paddr+ak37pcm->CaptureCurrPos);
-		ak37pcm->p_aecbufs.len_out = akpcm_capture_period_bytes_min;
-	    ret = AECLib_Control(ak37pcm->pfilter, &ak37pcm->p_aecbufs);
-	}
-}
-//#endif
 
 /**
  * @brief  create new mixer interface
@@ -382,7 +230,6 @@ int ak_codec_register(struct ak_codec_dai *dai)
 		if (err < 0)
 			return err;
 	}
-	printk("AK PCM: create num_kcontrols=%d\n", dai->num_kcontrols);
 
 	// register a proc file to tell user whether the chip DAC module has been fixed
 	for (i = 0; i < dai->num_pentries; i++) {
@@ -563,23 +410,11 @@ void akpcm_playback_interrupt(unsigned long data)
 #endif
 
 
-#ifdef CONFING_SUPPORT_AEC
-//	tasklet_schedule(&akpcm->playback_aec_tasklet);
-#endif
-	
 	if(test_bit(0,&playback_statu) && avail < runtime->stop_threshold)//output stream is running
 	{
 		//printk(KERN_ERR "begin next dma");
 		if (pend_bytes < period_bytes)
 			memset(vaddr+akpcm->PlaybackCurrPos + pend_bytes, 0, period_bytes - pend_bytes);
-
-		//#ifdef CONFIG_SUPPORT_AEC
-		if( akpcm->dai->aec_flag == 1)
-		{
-			AECLib_DacInt(akpcm->pfilter, phys_to_virt(paddr+akpcm->PlaybackCurrPos), period_bytes);
-		}
-		//memcpy(akpcm->playback_data, akpcm->temp, period_bytes);
-		//#endif
 
 		l2_combuf_dma(paddr+akpcm->PlaybackCurrPos, id, period_bytes, 
 			(l2_dma_transfer_direction_t)MEM2BUF,1);
@@ -633,6 +468,7 @@ void akpcm_capture_interrupt(unsigned long data)
 	
 	unsigned long period_bytes = 0;
 	unsigned long buffer_bytes = 0;
+
 	period_bytes = frames_to_bytes(runtime,runtime->period_size);
 	buffer_bytes = frames_to_bytes(runtime,runtime->buffer_size);
 	do_gettimeofday(&capSync.tv);
@@ -642,33 +478,13 @@ void akpcm_capture_interrupt(unsigned long data)
 	{
 		akpcm->CaptureCurrPos = 0;
 	}
+
 	snd_pcm_period_elapsed(substream);
 
-//#ifdef CONFIG_SUPPORT_AEC
-	if( akpcm->dai->aec_flag == 1)
-	{
-		tasklet_schedule(&akpcm->capture_aec_tasklet);
-	}
-//#endif
 	if(test_bit(0,&akpcm->captureStrmDMARunning)) //input stream is running
 	{
-		
-		//#ifdef CONFIG_SUPPORT_AEC
-		if( akpcm->dai->aec_flag == 1)
-		{
-			AECLib_AdcInt(akpcm->pfilter, akpcm->capture_data, akpcm_capture_period_bytes_min); 
-		
-	
-			l2_combuf_dma(virt_to_phys(akpcm->capture_data), id, akpcm_capture_period_bytes_min, 
-			(l2_dma_transfer_direction_t)BUF2MEM,1);
-		}
-		//#else
-		else
-		{
-			l2_combuf_dma(paddr+akpcm->CaptureCurrPos, id, akpcm_capture_period_bytes_min, 
-			(l2_dma_transfer_direction_t)BUF2MEM,1);
-			}
-		//#endif
+		l2_combuf_dma(paddr+akpcm->CaptureCurrPos, id, akpcm_capture_period_bytes_min,
+		(l2_dma_transfer_direction_t)BUF2MEM,1);
 	}
 	else  //input stream has been stopped
 	{
@@ -766,6 +582,10 @@ static int akpcm_playback_trigger(struct snd_pcm_substream *substream, int cmd)
 		return 0;
 	}
 	case SNDRV_PCM_TRIGGER_STOP:
+		clear_bit(0,&playback_statu); //stop playback stream
+		if (akpcm->ops->speaker_enable)
+			akpcm->ops->speaker_enable(akpcm->dai, false);
+		return 0;
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		clear_bit(0,&playback_statu); //stop playback stream
@@ -910,9 +730,11 @@ static int akpcm_capture_prepare(struct snd_pcm_substream *substream)
 	capSync.rate = runtime->rate;
 	
 	akpcm->CaptureCurrPos = 0;
-	/* FIXME */
 	if (akpcm->ops->set_adc_samplerate)
 		capSync.rate = akpcm->ops->set_adc_samplerate(akpcm->dai, runtime->rate);
+
+	printk(KERN_INFO "akpcm: capture requested %u Hz, adc achieves %u Hz\n",
+	       runtime->rate, capSync.rate);
 
 	if (akpcm->ops->set_adc_channels)
 		akpcm->ops->set_adc_channels(akpcm->dai, runtime->channels);
@@ -1056,8 +878,10 @@ static int akpcm_playback_hw_free(struct snd_pcm_substream *substream)
 	}
 	if(BUF_NULL!=akpcm->L2BufID_For_DAC)
 	{
+		if (akpcm->ops->speaker_enable)
+			akpcm->ops->speaker_enable(akpcm->dai, false);
 		/* FIXME */
-#if !defined(AK_PCM_DELAY_CLOSE_DAC)		
+#if !defined(AK_PCM_DELAY_CLOSE_DAC)
 		if (akpcm->ops->playback_end) {
 			akpcm->ops->playback_end(akpcm->dai);
 		}
@@ -1124,16 +948,6 @@ static int akpcm_playback_open(struct snd_pcm_substream *substream)
 	akpcm->optimal_period_size = 0;
 	akpcm->optimal_period_bytes = 0;
 
-	//#ifdef CONFIG_SUPPORT_AEC
-	if (!akpcm->playback_data) 
-	{
-		akpcm->playback_data = kmalloc(akpcm_playback_period_bytes_min * 2, GFP_KERNEL);
-		if (!akpcm->playback_data)
-		{
-			printk("ak37pcm_playback_open==>allocate memory for playback_data failed!\n");
-		}
-	}
-	//#endif
 	return 0;
 }
 
@@ -1151,26 +965,7 @@ static int akpcm_capture_open(struct snd_pcm_substream *substream)
 	akpcm->capturesubstrm = substream;
 	runtime->hw = akpcm_capture_hardware;	
 	akpcm->CaptureCurrPos = 0;
-	
-//#ifdef CONFIG_SUPPORT_AEC
-	if(!akpcm->capture_data)
-	{
-		akpcm->capture_data = kmalloc(akpcm_capture_period_bytes_min, GFP_KERNEL);
-		if (!akpcm->capture_data)
-		{
-			printk("akpcm_capture_open==>allocate memory for capture_data failed!\n");
-		}
-	}
-	if(!akpcm->temp)
-	{
-		akpcm->temp= kmalloc(akpcm_capture_period_bytes_min, GFP_KERNEL);
-		if (!akpcm->temp)
-		{
-			printk("akpcm_capture_open==>allocate memory for temp failed!\n");
-		}
-		//memset(akpcm->temp, 0x)
-	}
-//#endif
+
 	return 0;
 }
 
@@ -1193,14 +988,6 @@ static int akpcm_playback_close(struct snd_pcm_substream *substream)
 		akpcm->pp_buf_addr[1] = NULL;
 	}
 
-	//#ifdef CONFIG_SUPPORT_AEC
-	if (akpcm->playback_data) 
-	{
-		kfree(akpcm->playback_data);
-		akpcm->playback_data = NULL;
-	}	
-	//#endif
-	
 	return 0;
 }
 
@@ -1299,18 +1086,41 @@ static int akpcm_cpufreq_transition(struct notifier_block *nb,
 	} else if (val == CPUFREQ_POSTCHANGE) {
 		if (freqs->old_cpufreq.pll_sel != freqs->new_cpufreq.pll_sel) {
 			if (test_bit(2,&akpcm->playbackStrmDMARunning)) {
+				unsigned long dac_sr = 0;
+
 				printk("---- restart pcm playback\n");
 
 				substream = akpcm->playbacksubstrm;
 				runtime = substream->runtime;
 				/* reconfig sample rate after PLL has been changed */
-				/* FIXME */
 				if (akpcm->ops->set_dac_samplerate)
-					akpcm->ops->set_dac_samplerate(akpcm->dai, runtime->rate);
+					dac_sr = akpcm->ops->set_dac_samplerate(akpcm->dai,
+									runtime->rate);
+				printk(KERN_INFO "akpcm: pll change, dac reprogrammed for "
+				       "%u Hz, achieves %lu Hz\n", runtime->rate, dac_sr);
 
 				/* resume PCM data transmission */
 				akpcm_playback_trigger(substream, SNDRV_PCM_TRIGGER_RESUME);
 				clear_bit(2, &akpcm->playbackStrmDMARunning);
+			}
+
+			substream = akpcm->capturesubstrm;
+			if (substream && substream->runtime &&
+			    test_bit(0, &akpcm->captureStrmDMARunning)) {
+				unsigned long adc_sr;
+				unsigned int was = capSync.rate;
+
+				runtime = substream->runtime;
+				adc_sr = runtime->rate;
+				if (akpcm->ops->set_adc_samplerate)
+					adc_sr = akpcm->ops->set_adc_samplerate(akpcm->dai,
+									runtime->rate);
+				do_gettimeofday(&capSync.tv);
+				capSync.adcCapture_bytes = 0;
+				capSync.rate = (unsigned int)adc_sr;
+				printk(KERN_INFO "akpcm: pll change, adc reprogrammed for "
+				       "%u Hz, achieves %u Hz (was %u Hz)\n",
+				       runtime->rate, capSync.rate, was);
 			}
 		}
 	}
@@ -1603,17 +1413,6 @@ static struct notifier_block akpcm_reboot_notifier = {
 };
 
 
-//#ifdef CONFIG_SUPPORT_AEC
-T_pVOID akpcm_capture_aec_kmalloc(T_U32 size)
-{
-	return kmalloc(size, GFP_KERNEL | GFP_ATOMIC);
-}
-T_VOID  akpcm_capture_aec_kfree(T_pVOID mem)
-{
-	kfree(mem);
-}
-//#endif
-
 /**
  * @brief     Init the device which was probed, and register a snd device
  * @author    Cheng MingJuan
@@ -1665,15 +1464,6 @@ static int snd_akpcm_probe(struct platform_device *devptr)
 	akpcm->close_dac.func = dac_exit_tasklet;
 	akpcm->close_dac.data = (unsigned long)akpcm;
 
-
-//#ifdef CONFIG_SUPPORT_AEC
-		akpcm->capture_aec_tasklet.func = ak37pcm_capture_aec;
-		akpcm->capture_aec_tasklet.data = (unsigned long)akpcm;
-	
-		akpcm->playback_aec_tasklet.func = ak37pcm_playback_aec;
-		akpcm->playback_aec_tasklet.data = (unsigned long)akpcm;
-//#endif
-
 	INIT_DELAYED_WORK(&akpcm->ds_work, delay_start_work);	
 
 	clear_bit(0,&playback_statu);
@@ -1721,45 +1511,6 @@ static int snd_akpcm_probe(struct platform_device *devptr)
 	reboot_info = akpcm;
 	mutex_unlock(&reboot_lock);
 
-//#ifdef CONFIG_SUPPORT_AEC
-		memset(&akpcm->p_aecin, 0, sizeof(akpcm->p_aecin));
-		memset(&akpcm->p_aecbufs, 0, sizeof(akpcm->p_aecbufs));
-		akpcm->p_aecin.cb_fun.Malloc = akpcm_capture_aec_kmalloc;
-		akpcm->p_aecin.cb_fun.Free = akpcm_capture_aec_kfree;
-		akpcm->p_aecin.cb_fun.printf = (AEC_CALLBACK_FUN_PRINTF)printk;
-		//akpcm->p_aecin.m_info.m_Type = AEC_TYPE_2;
-		//akpcm->p_aecin.m_info.m_BitsPerSample = AEC_BITSPERSAMPLE;
-		akpcm->p_aecin.m_info.m_Channels = AEC_CHANNELS;
-		akpcm->p_aecin.m_info.m_SampleRate = AEC_SAMPLERATE;
-		
-		//akpcm->p_aecin.m_info.m_Private.m_aec.m_PreprocessEna = 0;
-		//akpcm->p_aecin.m_info.m_Private.m_aec.m_framelen = AEC_NN;
-		akpcm->p_aecin.m_info.m_Private.m_aec.m_tail = 1280;
-		akpcm->p_aecin.m_info.m_Private.m_aec.m_aecBypass = 0;
-		akpcm->p_aecin.m_info.m_Private.m_aec.m_framelen = 256;
-    	akpcm->p_aecin.m_info.m_Private.m_aec.m_PreprocessEna = 1;
-		akpcm->p_aecin.m_info.m_Private.m_aec.AGClevel = 24576;
-		akpcm->p_aecin.m_info.m_Private.m_aec.maxGain = 3;
-		akpcm->p_aecin.m_info.m_Private.m_aec.DacVolume = 1024;
-		akpcm->p_aecin.m_info.m_Private.m_aec.AdcCutTime = 100;
-		akpcm->p_aecin.m_info.m_Private.m_aec.AdcMinSpeechPow = 1024;
-		akpcm->p_aecin.m_info.m_Private.m_aec.DacMinSpeechPow = 512;
-		akpcm->p_aecin.m_info.m_Private.m_aec.AdcSpeechMultiple = (T_U32)(1.8*(1<<14));
-		akpcm->p_aecin.m_info.m_Private.m_aec.DacSpeechMultiple = (T_U32)(1.8*(1<<14));
-		akpcm->p_aecin.m_info.m_Private.m_aec.AdcSpeechHoldTime = 900;
-		akpcm->p_aecin.m_info.m_Private.m_aec.DacSpeechHoldTime = 900;
-		akpcm->p_aecin.m_info.m_Private.m_aec.AdcConvergTime = 10000;
-		akpcm->p_aecin.m_info.m_Private.m_aec.DacConvergTime = 10000;
-		akpcm->pfilter = AECLib_Open(&akpcm->p_aecin);
-		if (akpcm->pfilter) {
-			printk("AEC function has been successfully activated!\n");
-		} else {
-			printk("Failed to initialize AEC Lib, AEC function is closed\n");
-		}
-//#endif
-
-
-
 	err = snd_card_register(card);
 	if (err == 0) {
 		platform_set_drvdata(devptr, card);
@@ -1792,11 +1543,6 @@ static int snd_akpcm_remove(struct platform_device *devptr)
 
 	del_timer(&akpcm->stopoutput_work_timer);
 
-//#ifdef CONFIG_SUPPORT_AEC
-	AECLib_Close(akpcm->pfilter);
-	kfree(akpcm->capture_data);
-	kfree(akpcm->playback_data);
-//#endif
 	/* FIXME */
 	snd_card_set_dev(card, NULL);
 	snd_card_free(card);
