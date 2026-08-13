@@ -2,10 +2,22 @@
  * Coherent per-device memory handling.
  * Borrowed from i386
  */
+#include <linux/bitmap.h>
+#include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/dma-mapping.h>
+
+/* One "shared-dma-pool" region is a single bitmap shared by every device that
+ * names it in memory-region, so a pool total cannot say which device grew.
+ * Allocations past the last slot stay in the total, attributed to nobody. */
+#define DMA_COHERENT_OWNERS	4
+
+struct dma_coherent_owner {
+	struct device	*dev;
+	unsigned long	pages;
+};
 
 struct dma_coherent_mem {
 	void		*virt_base;
@@ -15,7 +27,33 @@ struct dma_coherent_mem {
 	int		flags;
 	unsigned long	*bitmap;
 	spinlock_t	spinlock;
+	struct dma_coherent_owner owner[DMA_COHERENT_OWNERS];
 };
+
+/* Caller holds mem->spinlock. */
+static void dma_coherent_account(struct dma_coherent_mem *mem,
+				 struct device *dev, unsigned long pages,
+				 bool freeing)
+{
+	int i;
+
+	for (i = 0; i < DMA_COHERENT_OWNERS; i++) {
+		if (mem->owner[i].dev == dev)
+			break;
+		if (!mem->owner[i].dev && !freeing) {
+			mem->owner[i].dev = dev;
+			break;
+		}
+	}
+	if (i == DMA_COHERENT_OWNERS)
+		return;
+	if (!freeing)
+		mem->owner[i].pages += pages;
+	else if (mem->owner[i].pages > pages)
+		mem->owner[i].pages -= pages;
+	else
+		mem->owner[i].pages = 0;
+}
 
 static int dma_init_coherent_memory(phys_addr_t phys_addr, dma_addr_t device_addr,
 			     size_t size, int flags,
@@ -129,6 +167,8 @@ void *dma_mark_declared_memory_occupied(struct device *dev,
 	spin_lock_irqsave(&mem->spinlock, flags);
 	pos = (device_addr - mem->device_base) >> PAGE_SHIFT;
 	err = bitmap_allocate_region(mem->bitmap, pos, get_order(size));
+	if (!err)
+		dma_coherent_account(mem, dev, 1UL << get_order(size), false);
 	spin_unlock_irqrestore(&mem->spinlock, flags);
 
 	if (err != 0)
@@ -181,6 +221,7 @@ int dma_alloc_from_coherent(struct device *dev, ssize_t size,
 	 */
 	*dma_handle = mem->device_base + (pageno << PAGE_SHIFT);
 	*ret = mem->virt_base + (pageno << PAGE_SHIFT);
+	dma_coherent_account(mem, dev, 1UL << order, false);
 	memset(*ret, 0, size);
 	spin_unlock_irqrestore(&mem->spinlock, flags);
 
@@ -221,12 +262,70 @@ int dma_release_from_coherent(struct device *dev, int order, void *vaddr)
 
 		spin_lock_irqsave(&mem->spinlock, flags);
 		bitmap_release_region(mem->bitmap, page, order);
+		dma_coherent_account(mem, dev, 1UL << order, true);
 		spin_unlock_irqrestore(&mem->spinlock, flags);
 		return 1;
 	}
 	return 0;
 }
 EXPORT_SYMBOL(dma_release_from_coherent);
+
+/* dma_alloc_from_coherent() takes a naturally aligned run of 1 << order pages,
+ * so a free total does not predict whether a request can be served; the
+ * largest such run does. Caller holds mem->spinlock. */
+static unsigned long dma_coherent_largest_free(struct dma_coherent_mem *mem)
+{
+	unsigned long pages = mem->size;
+	int order;
+
+	for (order = get_order(pages << PAGE_SHIFT); order >= 0; order--) {
+		unsigned long run = 1UL << order;
+		unsigned long pos;
+
+		if (run > pages)
+			continue;
+		for (pos = 0; pos + run <= pages; pos += run)
+			if (find_next_bit(mem->bitmap, pos + run, pos) >=
+			    pos + run)
+				return run;
+	}
+	return 0;
+}
+
+static ssize_t dma_coherent_pool_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	struct dma_coherent_mem *mem = dev ? dev->dma_mem : NULL;
+	struct dma_coherent_owner owner[DMA_COHERENT_OWNERS];
+	unsigned long pages, used, largest, flags;
+	ssize_t n = 0;
+	int i;
+
+	if (!mem)
+		return -ENODEV;
+
+	spin_lock_irqsave(&mem->spinlock, flags);
+	pages = mem->size;
+	used = bitmap_weight(mem->bitmap, mem->size);
+	largest = dma_coherent_largest_free(mem);
+	memcpy(owner, mem->owner, sizeof(owner));
+	spin_unlock_irqrestore(&mem->spinlock, flags);
+
+	n += scnprintf(buf + n, PAGE_SIZE - n, "size %lu\n", pages << PAGE_SHIFT);
+	n += scnprintf(buf + n, PAGE_SIZE - n, "used %lu\n", used << PAGE_SHIFT);
+	n += scnprintf(buf + n, PAGE_SIZE - n, "largest %lu\n",
+		       largest << PAGE_SHIFT);
+	for (i = 0; i < DMA_COHERENT_OWNERS; i++)
+		if (owner[i].dev)
+			n += scnprintf(buf + n, PAGE_SIZE - n, "owner %s %lu\n",
+				       dev_name(owner[i].dev),
+				       owner[i].pages << PAGE_SHIFT);
+	return n;
+}
+
+struct device_attribute dev_attr_dma_coherent_pool =
+	__ATTR_RO(dma_coherent_pool);
+EXPORT_SYMBOL(dev_attr_dma_coherent_pool);
 
 /**
  * dma_mmap_from_coherent() - try to mmap the memory allocated from

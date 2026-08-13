@@ -56,6 +56,51 @@ void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
 	gen_pool_free(carveout_heap->pool, addr, size);
 }
 
+struct ion_carveout_scan {
+	unsigned long largest;
+};
+
+static void ion_carveout_scan_chunk(struct gen_pool *pool,
+				    struct gen_pool_chunk *chunk, void *data)
+{
+	struct ion_carveout_scan *scan = data;
+	unsigned long bits =
+		(chunk->end_addr - chunk->start_addr + 1) >> pool->min_alloc_order;
+	unsigned long pos = 0;
+
+	while (pos < bits) {
+		unsigned long start = find_next_zero_bit(chunk->bits, bits, pos);
+		unsigned long end;
+
+		if (start >= bits)
+			break;
+		end = find_next_bit(chunk->bits, bits, start);
+		if (end - start > scan->largest)
+			scan->largest = end - start;
+		pos = end + 1;
+	}
+}
+
+/* free is what the pool has left; largest is the biggest run first-fit can
+ * still hand out, which is the figure a contiguous request has to fit in. */
+int ion_carveout_heap_stats(struct ion_heap *heap, size_t *size, size_t *free,
+			    size_t *largest)
+{
+	struct ion_carveout_heap *carveout_heap;
+	struct ion_carveout_scan scan = { 0 };
+
+	if (heap->type != ION_HEAP_TYPE_CARVEOUT)
+		return -EINVAL;
+
+	carveout_heap = container_of(heap, struct ion_carveout_heap, heap);
+	*size = gen_pool_size(carveout_heap->pool);
+	*free = gen_pool_avail(carveout_heap->pool);
+	gen_pool_for_each_chunk(carveout_heap->pool, ion_carveout_scan_chunk,
+				&scan);
+	*largest = scan.largest << carveout_heap->pool->min_alloc_order;
+	return 0;
+}
+
 static int ion_carveout_heap_phys(struct ion_heap *heap,
 				  struct ion_buffer *buffer,
 				  ion_phys_addr_t *addr, size_t *len)

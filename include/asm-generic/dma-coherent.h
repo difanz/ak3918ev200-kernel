@@ -23,6 +23,14 @@ void dma_release_declared_memory(struct device *dev);
 
 void *dma_mark_declared_memory_occupied(struct device *dev,
 					dma_addr_t device_addr, size_t size);
+
+/*
+ * Reports the device's coherent pool: size, used, largest allocatable run and
+ * per-device attribution, in bytes. A driver that owns a "shared-dma-pool"
+ * region publishes it with device_create_file().
+ */
+struct device_attribute;
+extern struct device_attribute dev_attr_dma_coherent_pool;
 #else
 #define dma_alloc_from_coherent(dev, size, handle, ret) (0)
 #define dma_release_from_coherent(dev, order, vaddr) (0)

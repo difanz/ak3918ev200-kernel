@@ -49,6 +49,8 @@ static int ion_proc_show(struct seq_file *m, void *v)
 
 	for( i=0; i<num_heaps; i++ )
 	{
+		size_t size, free, largest;
+
 		seq_printf(m,
 			   "heap-name: %s\n"
 			   "heap-id: %d\n"
@@ -61,6 +63,13 @@ static int ion_proc_show(struct seq_file *m, void *v)
 			   (unsigned long)heap_data[i]->base,
 			   (unsigned int)heap_data[i]->size,
 			   (heap_data[i]->type ==ION_HEAP_TYPE_DMA) ? "cma":"prereserved");
+
+		if (!ion_carveout_heap_stats(heaps[i], &size, &free, &largest))
+			seq_printf(m,
+				   "used: %zu\n"
+				   "free: %zu\n"
+				   "largest: %zu\n",
+				   size - free, free, largest);
 	}
 	return 0;
 }
