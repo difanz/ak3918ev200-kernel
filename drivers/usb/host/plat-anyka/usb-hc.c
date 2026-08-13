@@ -1742,7 +1742,7 @@ void akotg_usbhc_stop(struct usb_hcd *hcd)
 	unsigned long	flags;
 	
 	del_timer_sync(&hcd->rh_timer);
-	clk_disable(akotghc->clk);
+	clk_disable_unprepare(akotghc->clk);
 	
 	/* reset usb phy */
 	usb_reset_phy(akotghc);
@@ -1793,7 +1793,7 @@ int akotg_usbhc_start(struct usb_hcd *hcd)
 	disable_irq(akotghc->mcu_irq);
 	//disable_irq(akotghc->dma_irq);
 
-	clk_enable(akotghc->clk);
+	clk_prepare_enable(akotghc->clk);
 
 	usb_hwinit_control(akotghc);
 	
