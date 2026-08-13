@@ -498,4 +498,27 @@ config CRYPTO_DEV_SUN4I_SS
 	  To compile this driver as a module, choose M here: the module
 	  will be called sun4i-ss.
 
+config CRYPTO_DEV_ANYKA_ENCRYPT
+	tristate "Anyka AK39EV330/AK3918EV200 encrypt engine"
+	depends on ARCH_AK
+	depends on OF
+	depends on HAS_DMA
+	select CRYPTO_ALGAPI
+	select CRYPTO_BLKCIPHER
+	select CRYPTO_AES
+	help
+	  AES offload for the Anyka encrypt block at 0x20180000. The block has
+	  no decrypt direction, so decryption is served by a software cipher.
+
+	  Say M here only for a laboratory image; product images use software
+	  crypto and leave the device tree node disabled.
+
+config CRYPTO_DEV_ANYKA_ENCRYPT_BENCH
+	tristate "Throughput and cross-check instrument for skcipher algorithms"
+	depends on DEBUG_FS
+	select CRYPTO_BLKCIPHER
+	help
+	  Debugfs instrument that times any skcipher the crypto API can resolve
+	  and compares one implementation against another. Laboratory only.
+
 endif # CRYPTO_HW
