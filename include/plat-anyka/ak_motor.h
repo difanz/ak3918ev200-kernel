@@ -9,22 +9,22 @@
 #define AK_MOTOR_GET_HIT_STATUS		_IOW(AK_MOTOR_IOC_MAGIC, 15, int)
 #define AK_MOTOR_TURN_STOP		_IOW(AK_MOTOR_IOC_MAGIC, 16, int)
 
-#define AK_MOTOR_EVENT_HIT		(1)
-#define AK_MOTOR_EVENT_UNHIT		(2)
-#define AK_MOTOR_EVENT_STOP		(3)
+#define AK_MOTOR_EVENT_HIT		(1u << 0)
+#define AK_MOTOR_EVENT_UNHIT		(1u << 1)
+#define AK_MOTOR_EVENT_STOP		(1u << 2)
 
 #define AK_MOTOR_HITTING_LEFT		(1 << 0)
 #define AK_MOTOR_HITTING_RIGHT		(1 << 1)
 
 #define AK_MOTOR_MIN_SPEED		(1)
-#define AK_MOTOR_MAX_SPEED		(50)
+#define AK_MOTOR_MAX_SPEED		(200)
 
 #define AK_MOTOR_MAX_ANGLE		(360)
 
 struct notify_data {
 	int hit_num;
 	int event;
-	int remain_angle;
+	int remain_steps;
 };
 
 #endif

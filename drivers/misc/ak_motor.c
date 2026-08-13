@@ -23,7 +23,8 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
-#include <linux/timer.h>
+#include <linux/hrtimer.h>
+#include <linux/ktime.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
 
@@ -37,10 +38,7 @@
 #define MOTOR_TURN_CLKWISE	(0)
 #define MOTOR_TURN_ANTICLKWISE	(1)
 
-#define MOTOR_STEP_PERIOD	(64)
-#define MOTOR_STEP_ANGLE	(360 / MOTOR_STEP_PERIOD)
-#define MOTOR_STEP_REMAIN	(360 % MOTOR_STEP_PERIOD)
-#define MOTOR_DEFAULT_DELAY_MS	(2)
+#define AK_MOTOR_MAX_DELAY_MS	(1000)
 
 #define MOTOR_STATUS_RUNNING	(1)
 #define MOTOR_STATUS_STOPING	(2)
@@ -60,53 +58,44 @@ struct ak_motor {
 	struct gpio_desc	*phase[AK_MOTOR_PHASE_NUM];
 
 	spinlock_t		lock;
-	struct timer_list	work_timer;
+	struct hrtimer		step_timer;
 	wait_queue_head_t	event;
 	atomic_t		opened;
 
 	unsigned int		angular_speed;
 	unsigned int		delay_ms;
-	unsigned long		delay_jiffies;
+	ktime_t			period;
 
 	int			dir;
 	u8			index;
-	int			angle;
 	int			total;
 	int			count;
-	int			remain_angle;
+	int			remain_steps;
 	int			running;
 
 	int			rd_flags;
 	struct notify_data	data;
 };
 
-static inline int motor_step_count(int angle)
-{
-	int count;
-
-	count = angle * MOTOR_STEP_ANGLE;
-	count += (angle * MOTOR_STEP_REMAIN) / MOTOR_STEP_PERIOD;
-
-	return count;
-}
-
+/* Steps per second is speed scaled by 4096/360; the period floors at 1 ms. */
 static inline unsigned int get_delay_by_speed(unsigned int speed)
 {
-	unsigned int time;
+	unsigned int quot = (speed << 12) / 360;
+	unsigned int delay = quot ? 1000 / quot : AK_MOTOR_MAX_DELAY_MS;
 
-	time = 1000 / speed;
-	time /= MOTOR_STEP_ANGLE;
-	if (time == 0)
-		time = MOTOR_DEFAULT_DELAY_MS;
+	if (delay < 1)
+		delay = 1;
+	if (delay > AK_MOTOR_MAX_DELAY_MS)
+		delay = AK_MOTOR_MAX_DELAY_MS;
 
-	return time;
+	return delay;
 }
 
 static void ak_motor_set_speed(struct ak_motor *motor, unsigned int speed)
 {
 	motor->angular_speed = speed;
 	motor->delay_ms = get_delay_by_speed(speed);
-	motor->delay_jiffies = msecs_to_jiffies(motor->delay_ms);
+	motor->period = ms_to_ktime(motor->delay_ms);
 }
 
 static void ak_motor_phase_write(struct ak_motor *motor, u8 pattern)
@@ -120,18 +109,19 @@ static void ak_motor_phase_write(struct ak_motor *motor, u8 pattern)
 static void ak_motor_notify(struct ak_motor *motor, int num, int event)
 {
 	motor->data.hit_num = num;
-	motor->data.event = event;
-	motor->data.remain_angle = motor->remain_angle;
+	/* Bitfield: a reader that has not consumed the last one still sees it. */
+	motor->data.event |= event;
+	motor->data.remain_steps = motor->remain_steps;
 	motor->rd_flags = 1;
 
 	wake_up_interruptible(&motor->event);
 }
 
-static void ak_motor_timer_handler(unsigned long data)
+static enum hrtimer_restart ak_motor_step(struct hrtimer *timer)
 {
-	struct ak_motor *motor = (struct ak_motor *)data;
+	struct ak_motor *motor = container_of(timer, struct ak_motor, step_timer);
+	enum hrtimer_restart ret = HRTIMER_NORESTART;
 	unsigned long flags;
-	int step;
 
 	spin_lock_irqsave(&motor->lock, flags);
 
@@ -146,48 +136,48 @@ static void ak_motor_timer_handler(unsigned long data)
 	motor->index = (motor->index +
 			(motor->dir == MOTOR_TURN_CLKWISE ? 1 : AK_MOTOR_SEQ_LEN - 1)) &
 		       (AK_MOTOR_SEQ_LEN - 1);
-	step = motor->total - motor->count;
 
-	motor->remain_angle = motor->angle -
-			      (step * MOTOR_STEP_PERIOD) / 360;
+	motor->remain_steps = --motor->count;
 
-	if (--motor->count > 0) {
-		mod_timer(&motor->work_timer, jiffies + motor->delay_jiffies);
+	if (motor->count > 0) {
+		hrtimer_forward_now(timer, motor->period);
+		ret = HRTIMER_RESTART;
 	} else {
 		motor->running = MOTOR_STATUS_STOPED;
-		motor->remain_angle = 0;
 		ak_motor_phase_write(motor, 0);
 		ak_motor_notify(motor, 0, AK_MOTOR_EVENT_STOP);
 	}
 
 out:
 	spin_unlock_irqrestore(&motor->lock, flags);
+	return ret;
 }
 
-static int ak_motor_turn(struct ak_motor *motor, int dir, int angle)
+/* `steps` is phase updates, not degrees: the caller does that conversion. */
+static int ak_motor_turn(struct ak_motor *motor, int dir, int steps)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&motor->lock, flags);
 
 	motor->dir = dir;
-	motor->angle = angle;
-	motor->remain_angle = angle;
-	motor->total = motor_step_count(angle) * 2;
-	motor->count = motor->total;
+	motor->total = steps;
+	motor->count = steps;
+	motor->remain_steps = steps;
 	motor->running = MOTOR_STATUS_RUNNING;
 
 	if (motor->count <= 0) {
 		motor->running = MOTOR_STATUS_STOPED;
-		motor->remain_angle = 0;
+		motor->remain_steps = 0;
 		ak_motor_notify(motor, 0, AK_MOTOR_EVENT_STOP);
 		spin_unlock_irqrestore(&motor->lock, flags);
 		return 0;
 	}
 
-	mod_timer(&motor->work_timer, jiffies);
-
 	spin_unlock_irqrestore(&motor->lock, flags);
+
+	/* Stock starts the timer at once, so the first step is immediate. */
+	hrtimer_start(&motor->step_timer, ns_to_ktime(0), HRTIMER_MODE_REL);
 
 	return 0;
 }
@@ -211,9 +201,9 @@ static int ak_motor_open(struct inode *inode, struct file *file)
 		return -EBUSY;
 
 	motor->rd_flags = 0;
-	motor->data.event = AK_MOTOR_EVENT_UNHIT;
+	motor->data.event = 0;
 	motor->data.hit_num = 0;
-	motor->data.remain_angle = 0;
+	motor->data.remain_steps = 0;
 
 	file->private_data = motor;
 
@@ -225,7 +215,7 @@ static int ak_motor_release(struct inode *inode, struct file *file)
 	struct ak_motor *motor = file->private_data;
 
 	ak_motor_stop(motor);
-	del_timer_sync(&motor->work_timer);
+	hrtimer_cancel(&motor->step_timer);
 
 	spin_lock_irq(&motor->lock);
 	motor->running = MOTOR_STATUS_STOPED;
@@ -260,6 +250,7 @@ static ssize_t ak_motor_read(struct file *file, char __user *buf, size_t len,
 
 	spin_lock_irqsave(&motor->lock, flags);
 	data = motor->data;
+	motor->data.event = 0;
 	motor->rd_flags = 0;
 	spin_unlock_irqrestore(&motor->lock, flags);
 
@@ -310,7 +301,7 @@ static long ak_motor_ioctl(struct file *file, unsigned int cmd,
 	case AK_MOTOR_TURN_ANTICLKWISE:
 		if (get_user(val, argp))
 			return -EFAULT;
-		if (val < 0 || val > AK_MOTOR_MAX_ANGLE)
+		if (val < 0)
 			return -EINVAL;
 		if (motor->running == MOTOR_STATUS_RUNNING)
 			return -EBUSY;
@@ -383,8 +374,8 @@ static int ak_motor_probe(struct platform_device *pdev)
 	atomic_set(&motor->opened, 0);
 	motor->running = MOTOR_STATUS_STOPED;
 	ak_motor_set_speed(motor, speed);
-	setup_timer(&motor->work_timer, ak_motor_timer_handler,
-		    (unsigned long)motor);
+	hrtimer_init(&motor->step_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	motor->step_timer.function = ak_motor_step;
 
 	motor->miscdev.minor = MISC_DYNAMIC_MINOR;
 	motor->miscdev.name = devm_kasprintf(dev, GFP_KERNEL, "%s%d",
@@ -401,9 +392,8 @@ static int ak_motor_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, motor);
-	dev_info(dev, "%s: %u steps per turn, speed %u, %u ms per step\n",
-		 motor->miscdev.name, motor_step_count(360),
-		 motor->angular_speed, jiffies_to_msecs(motor->delay_jiffies));
+	dev_info(dev, "%s: speed %u, %u ms per step\n",
+		 motor->miscdev.name, motor->angular_speed, motor->delay_ms);
 
 	return 0;
 }
@@ -413,7 +403,7 @@ static int ak_motor_remove(struct platform_device *pdev)
 	struct ak_motor *motor = platform_get_drvdata(pdev);
 
 	misc_deregister(&motor->miscdev);
-	del_timer_sync(&motor->work_timer);
+	hrtimer_cancel(&motor->step_timer);
 	ak_motor_phase_write(motor, 0);
 
 	return 0;
