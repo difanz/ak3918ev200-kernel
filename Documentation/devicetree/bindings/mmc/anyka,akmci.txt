@@ -1,0 +1,49 @@
+* Anyka AK39 MCI host controller
+
+The MCI block is the MMC/SD/SDIO host controller on the Anyka AK39 family
+(AK3918EV200, AK39EV330). It is PL180-inspired but not PL180-compatible: the
+register roles at 0x038, 0x03c and 0x040 differ, the status bits are
+renumbered, status is cleared by being read, and payload reaches the card
+through one 512-byte buffer taken from the SoC's shared L2 pool rather than
+through an internal FIFO. Do not describe it as "arm,pl18x".
+
+Required properties:
+- compatible	: should be one of
+		    "anyka,ak3918ev200-mmc0"	MMC/SD instance
+		    "anyka,ak3918ev200-mmc1"	SDIO instance
+		    "anyka,ak39ev330-mmc0"	MMC/SD instance
+		    "anyka,ak39ev330-mmc1"	SDIO instance
+		  A board may list the SoC-specific string first and the
+		  family string second.
+- reg		: controller register block
+- interrupts	: the controller interrupt; the shared L2 interrupt may
+		  follow it and is not claimed by this driver
+- clocks	: the controller gate clock
+
+Optional properties, in addition to the common MMC bindings described in
+mmc.txt:
+- bus-width	: 1 or 4. Defaults to 4. Boards that route only DAT0 must
+		  say 1; a wider setting on such a board corrupts transfers.
+- max-frequency	: bus clock ceiling in Hz. Defaults to 25000000.
+- broken-cd	: the card detect pad is not usable; the slot is treated as
+		  always occupied even when cd-gpios is present.
+- non-removable	: the card is soldered or otherwise never swapped.
+- cd-gpios	: card detect GPIO, active low. Ignored when broken-cd is set.
+- wp-gpios	: write protect GPIO, active low.
+- cap-sd-highspeed, cap-mmc-highspeed : enable high-speed timing.
+
+Example:
+
+	mmc0: mmc0@20100000 {
+		compatible = "anyka,ak3918ev200-mmc0", "anyka,ak39ev330-mmc0";
+		reg = <0x20100000 0x7fff>;
+		interrupts = <4 0>, <22 0>;
+		clocks = <&gclk_asic 0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mci0_pins>;
+		bus-width = <1>;
+		max-frequency = <25000000>;
+		non-removable;
+		broken-cd;
+		status = "okay";
+	};
