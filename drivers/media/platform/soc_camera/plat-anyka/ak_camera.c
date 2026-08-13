@@ -19,6 +19,8 @@
 #include <linux/sched.h>
 #include <linux/clk.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
@@ -47,6 +49,9 @@
 #define isp_dbg(fmt, args...)	do{}while(0)
 #endif
 
+#define AK_CAM_VO_BUFFERS	4
+#define AK_CAM_MDINFO_SIZE	1024
+
 enum buffer_list_state {
 	LIST_ZERO = 1,
 	LIST_ONE,
@@ -62,13 +67,39 @@ struct ak_buffer {
 	int				inwork;
 };
 
+enum ak_cam_irq_event {
+	AK_CAM_IRQ_LATE_FRAME,
+	AK_CAM_IRQ_LOST_FRAME,
+	AK_CAM_IRQ_ID_INVALID,
+	AK_CAM_IRQ_ID_MISMATCH,
+	AK_CAM_IRQ_ID_ERROR,
+	AK_CAM_IRQ_SPURIOUS,
+	AK_CAM_IRQ_LIST_ZERO,
+	AK_CAM_IRQ_ACTIVE_BUSY,
+	AK_CAM_IRQ_EVENTS,
+};
+
+struct ak_camera_irq_stats {
+	u32 count[AK_CAM_IRQ_EVENTS];
+	u32 max_gap_ms;
+};
+
+enum ak_cam_queue_event {
+	AK_CAM_QUEUE_VB_LINKED,
+	AK_CAM_QUEUE_MODE_UNSET,
+	AK_CAM_QUEUE_EVENTS,
+};
+
+struct ak_camera_queue_stats {
+	u32 count[AK_CAM_QUEUE_EVENTS];
+};
+
 struct ak_camera_dev {
 	struct soc_camera_host soc_host;
 	struct soc_camera_device *icd;
 	unsigned long bus_flags;
 
 	struct clk	*clk;		// camera controller clk. it's parent is vclk defined in clock.c
-	struct clk	*cis_sclk;		// cis_sclk clock for sensor
 	unsigned long	mclk;
 	unsigned int	irq;
 
@@ -95,7 +126,27 @@ struct ak_camera_dev {
 	int stream_active;
 	int cur_buf_id;
 
+	u32 buf_paddr[AK_CAM_VO_BUFFERS];
+	void *buf_vaddr[AK_CAM_VO_BUFFERS];
+	u32 buf_size;
+	bool mdinfo_oob_logged;
+	bool mdinfo_unmapped_logged;
 
+	struct ak_camera_irq_stats irq_stats;
+	unsigned long irq_reported;
+
+	struct ak_camera_queue_stats queue_stats;
+	unsigned long queue_reported;
+
+	size_t pool_bytes;
+
+	void *ref_y_cpu;
+	void *ref_uv_cpu;
+	dma_addr_t ref_y_dma;
+	dma_addr_t ref_uv_dma;
+	size_t ref_y_bytes;
+	size_t ref_uv_bytes;
+	unsigned int ref_pixels;
 };
 
 struct ak_camera_cam {
@@ -117,7 +168,113 @@ static int video_frame_interval;
 static unsigned long in_irq_jf = 0;
 static unsigned long start_set_td_jf;
 
+/* jiffies at the previous frame-done interrupt, or 0 when there is no
+ * previous frame to measure a gap from. */
+static unsigned long sjf = 0;
+
 AK_ISP_SENSOR_CB *ak_sensor_get_sensor_cb(void);
+
+static bool ak_cam_irq_note(struct ak_camera_dev *pcdev,
+			     enum ak_cam_irq_event ev)
+{
+	pcdev->irq_stats.count[ev]++;
+
+	if (pcdev->irq_reported & BIT(ev))
+		return false;
+
+	pcdev->irq_reported |= BIT(ev);
+	return true;
+}
+
+/* Caller holds pcdev->lock, as the videobuf buf_queue callback does. */
+static bool ak_cam_queue_note_locked(struct ak_camera_dev *pcdev,
+				     enum ak_cam_queue_event ev)
+{
+	pcdev->queue_stats.count[ev]++;
+
+	if (pcdev->queue_reported & BIT(ev))
+		return false;
+
+	pcdev->queue_reported |= BIT(ev);
+	return true;
+}
+
+static const char * const ak_cam_irq_event_name[AK_CAM_IRQ_EVENTS] = {
+	[AK_CAM_IRQ_LATE_FRAME]	= "late_frame",
+	[AK_CAM_IRQ_LOST_FRAME]	= "lost_frame",
+	[AK_CAM_IRQ_ID_INVALID]	= "id_invalid",
+	[AK_CAM_IRQ_ID_MISMATCH]	= "id_mismatch",
+	[AK_CAM_IRQ_ID_ERROR]	= "id_error",
+	[AK_CAM_IRQ_SPURIOUS]	= "spurious_irq",
+	[AK_CAM_IRQ_LIST_ZERO]	= "list_zero",
+	[AK_CAM_IRQ_ACTIVE_BUSY] = "active_busy",
+};
+
+/* Caller must not hold pcdev->lock; the videobuf queue path does not. */
+static bool ak_cam_queue_note(struct ak_camera_dev *pcdev,
+			      enum ak_cam_queue_event ev)
+{
+	unsigned long flags;
+	bool report;
+
+	spin_lock_irqsave(&pcdev->lock, flags);
+	report = ak_cam_queue_note_locked(pcdev, ev);
+	spin_unlock_irqrestore(&pcdev->lock, flags);
+
+	return report;
+}
+
+static const char * const ak_cam_queue_event_name[AK_CAM_QUEUE_EVENTS] = {
+	[AK_CAM_QUEUE_VB_LINKED]	= "vb_still_linked",
+	[AK_CAM_QUEUE_MODE_UNSET]	= "isp_mode_unset",
+};
+
+static ssize_t queue_stats_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct soc_camera_host *ici = to_soc_camera_host(dev);
+	struct ak_camera_dev *pcdev = ici->priv;
+	struct ak_camera_queue_stats stats;
+	unsigned long flags;
+	ssize_t len = 0;
+	int i;
+
+	spin_lock_irqsave(&pcdev->lock, flags);
+	stats = pcdev->queue_stats;
+	spin_unlock_irqrestore(&pcdev->lock, flags);
+
+	for (i = 0; i < AK_CAM_QUEUE_EVENTS; i++)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%s %u\n",
+				 ak_cam_queue_event_name[i], stats.count[i]);
+
+	return len;
+}
+static DEVICE_ATTR_RO(queue_stats);
+
+static ssize_t irq_stats_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct soc_camera_host *ici = to_soc_camera_host(dev);
+	struct ak_camera_dev *pcdev = ici->priv;
+	struct ak_camera_irq_stats stats;
+	unsigned long flags;
+	ssize_t len = 0;
+	int i;
+
+	spin_lock_irqsave(&pcdev->lock, flags);
+	stats = pcdev->irq_stats;
+	spin_unlock_irqrestore(&pcdev->lock, flags);
+
+	for (i = 0; i < AK_CAM_IRQ_EVENTS; i++)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%s %u\n",
+				 ak_cam_irq_event_name[i], stats.count[i]);
+
+	len += scnprintf(buf + len, PAGE_SIZE - len, "max_gap_ms %u\n",
+			 stats.max_gap_ms);
+
+	return len;
+}
+static DEVICE_ATTR_RO(irq_stats);
 
 static void ak_camera_resume_work(struct work_struct *work)
 {
@@ -163,6 +320,7 @@ static void ak_camera_stop_streaming(struct ak_camera_dev *pcdev)
 	cancel_delayed_work_sync(&pcdev->ae_work);
 	spin_lock_irqsave(&pcdev->lock, flags);
 	pcdev->cur_buf_id = -1;
+	sjf = 0;
 	spin_unlock_irqrestore(&pcdev->lock, flags);
 	mutex_unlock(&pcdev->stream_lock);
 }
@@ -211,6 +369,77 @@ static void free_buffer(struct videobuf_queue *vq, struct ak_buffer *buf)
 	vb->state = VIDEOBUF_NEEDS_INIT;
 }
 
+#define AK_CAM_REF_Y_BYTES(pixels)	((size_t)(pixels) * 2)
+#define AK_CAM_REF_UV_BYTES(pixels)	((size_t)(pixels))
+
+static void ak_camera_free_ref_frame(struct ak_camera_dev *pcdev)
+{
+	struct device *dev = pcdev->soc_host.v4l2_dev.dev;
+
+	if (pcdev->ref_y_cpu) {
+		dma_free_coherent(dev, pcdev->ref_y_bytes, pcdev->ref_y_cpu,
+				  pcdev->ref_y_dma);
+		pcdev->ref_y_cpu = NULL;
+	}
+	if (pcdev->ref_uv_cpu) {
+		dma_free_coherent(dev, pcdev->ref_uv_bytes, pcdev->ref_uv_cpu,
+				  pcdev->ref_uv_dma);
+		pcdev->ref_uv_cpu = NULL;
+	}
+	pcdev->ref_pixels = 0;
+}
+
+static int ak_camera_alloc_ref_frame(struct ak_camera_dev *pcdev,
+				     unsigned int pixels)
+{
+	struct device *dev = pcdev->soc_host.v4l2_dev.dev;
+
+	if (pcdev->ref_pixels >= pixels)
+		return 0;
+
+	ak_camera_free_ref_frame(pcdev);
+
+	pcdev->ref_y_bytes = AK_CAM_REF_Y_BYTES(pixels);
+	pcdev->ref_uv_bytes = AK_CAM_REF_UV_BYTES(pixels);
+
+	pcdev->ref_y_cpu = dma_alloc_coherent(dev, pcdev->ref_y_bytes,
+					      &pcdev->ref_y_dma, GFP_KERNEL);
+	pcdev->ref_uv_cpu = dma_alloc_coherent(dev, pcdev->ref_uv_bytes,
+					       &pcdev->ref_uv_dma, GFP_KERNEL);
+	if (!pcdev->ref_y_cpu || !pcdev->ref_uv_cpu) {
+		ak_camera_free_ref_frame(pcdev);
+		dev_warn(dev,
+			 "no room in the capture pool for a %u-pixel 3D-NR reference frame; temporal noise reduction and the motion grid stay off\n",
+			 pixels);
+		return -ENOMEM;
+	}
+
+	pcdev->ref_pixels = pixels;
+	dev_info(dev,
+		 "3D-NR reference frame: Y %zu B at %pad, UV %zu B at %pad\n",
+		 pcdev->ref_y_bytes, &pcdev->ref_y_dma,
+		 pcdev->ref_uv_bytes, &pcdev->ref_uv_dma);
+
+	return 0;
+}
+
+static void ak_camera_program_ref_frame(struct ak_camera_dev *pcdev)
+{
+	AK_ISP_3D_NR_REF_ATTR ref;
+
+	if (!pcdev->ref_y_cpu || !pcdev->ref_uv_cpu)
+		return;
+
+	ref.yaddr_3d = (u32)pcdev->ref_y_dma;
+	ref.ysize_3d = pcdev->ref_y_bytes;
+	ref.uaddr_3d = (u32)pcdev->ref_uv_dma;
+	ref.usize_3d = pcdev->ref_uv_bytes / 2;
+	ref.vaddr_3d = (u32)pcdev->ref_uv_dma + pcdev->ref_uv_bytes / 2;
+	ref.vsize_3d = pcdev->ref_uv_bytes / 2;
+
+	ispdrv_vp_set_3d_nr_ref_addr(&ref);
+}
+
 /**
  * @brief:  Called when application apply buffers, camera buffer initial.
  *
@@ -224,6 +453,8 @@ static int ak_videobuf_setup(struct videobuf_queue *vq, unsigned int *count,
 								unsigned int *size)
 {
 	struct soc_camera_device *icd = vq->priv_data;
+	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
+	struct ak_camera_dev *pcdev = ici->priv;
 	int bytes_per_line = soc_mbus_bytes_per_line(icd->user_width,
 						icd->current_fmt->host_fmt);
 
@@ -234,10 +465,15 @@ static int ak_videobuf_setup(struct videobuf_queue *vq, unsigned int *count,
 	*size = bytes_per_line * icd->user_height;
 	//printk(KERN_ERR "%s size:%u, bytes_per_line:%d, icd->user_height:%d\n", __func__, *size, bytes_per_line, icd->user_height);
 
-	/* ISP2 exposes four VO buffer slots and starts only after all are set. */
-	if (*size > CONFIG_VIDEO_RESERVED_MEM_SIZE / 4)
+	/* dma_alloc_from_coherent() rounds each buffer up to a whole order. */
+	if (((size_t)AK_CAM_VO_BUFFERS << (get_order(*size) + PAGE_SHIFT)) >
+	    pcdev->pool_bytes)
 		return -ENOMEM;
-	*count = 4;
+
+	ak_camera_alloc_ref_frame(pcdev, icd->user_width * icd->user_height);
+
+	/* ISP2 exposes four VO buffer slots and starts only after all are set. */
+	*count = AK_CAM_VO_BUFFERS;
 
 	isp_dbg("%s count=%d, size=%d, bytes_per_line=%d\n",
 			__func__, *count, *size, bytes_per_line);
@@ -272,7 +508,14 @@ static int ak_videobuf_prepare(struct videobuf_queue *vq,
 		return bytes_per_line;
 
 	/* Added list head initialization on alloc */
-	WARN_ON(!list_empty(&vb->queue));
+	if (!list_empty(&vb->queue)) {
+		struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
+		struct ak_camera_dev *pcdev = ici->priv;
+
+		if (ak_cam_queue_note(pcdev, AK_CAM_QUEUE_VB_LINKED))
+			pr_warn("ak_camera: buf[%d] handed to prepare while still on a list; counted in queue_stats from here on\n",
+				vb->i);
+	}
 
 	BUG_ON(NULL == icd->current_fmt);
 
@@ -341,6 +584,7 @@ static int queue_single_mode(struct videobuf_buffer *vb, struct ak_camera_dev *p
 		ispdrv_vo_enable_buffer(BUFFER_ONE);
 
 		ispdrv_vi_apply_mode(pcdev->cur_mode);
+		ak_camera_program_ref_frame(pcdev);
 		ispdrv_vi_start_capturing();
 		pcdev->stream_active = 1;
 		pcdev->stream_ctrl_off = 0;
@@ -353,7 +597,8 @@ static int queue_single_mode(struct videobuf_buffer *vb, struct ak_camera_dev *p
 	//case LIST_FOUR:
 		break;
 	default:
-		printk("Not defined list stat [single mode].\n");
+		pr_err_ratelimited("ak_camera: QBUF in single mode with list state %d\n",
+				   pcdev->list_state);
 		break;
 	}
 
@@ -373,6 +618,7 @@ static int queue_continous_mode(struct videobuf_buffer *vb, struct ak_camera_dev
 	yaddr_chl2 = yaddr_chl1 + size * 3 / 2; /* for secondary channel */
 
 	isp_dbg("%s vb->i=%d, phyaddr=%x, user_width:%d, user_height:%d\n", __func__, vb->i, yaddr_chl1, icd->user_width, icd->user_height);
+
 	switch (pcdev->list_state) {
 	case LIST_FIVE:
 		break;
@@ -389,7 +635,8 @@ static int queue_continous_mode(struct videobuf_buffer *vb, struct ak_camera_dev
 		pcdev->list_state++;
 		break;
 	default:
-		printk("Not defined list stat [continous mode].\n");
+		pr_err_ratelimited("ak_camera: QBUF in continuous mode with list state %d\n",
+				   pcdev->list_state);
 		break;
 	}
 
@@ -405,6 +652,7 @@ static int queue_continous_mode(struct videobuf_buffer *vb, struct ak_camera_dev
 	if (pcdev->list_state == LIST_FOUR) {
 		ispdrv_vi_apply_mode(pcdev->cur_mode);
 		ispdrv_vo_enable_irq_status(0x1);
+		ak_camera_program_ref_frame(pcdev);
 
 		if (pcdev->stream_ctrl_off == 0) {
 			//printk(KERN_ERR "%s start capture\n", __func__);
@@ -439,6 +687,12 @@ static void ak_videobuf_queue(struct videobuf_queue *vq,
 	isp_dbg("%s (vb=0x%p) buf[%d] baddr = 0x%08lx, bsize = %d\n",
 			__func__,  vb, vb->i, vb->baddr, vb->bsize);
 
+	if (vb->i < AK_CAM_VO_BUFFERS) {
+		pcdev->buf_paddr[vb->i] = videobuf_to_dma_contig(vb);
+		pcdev->buf_vaddr[vb->i] = videobuf_queue_to_vaddr(vq, vb);
+		pcdev->buf_size = PAGE_ALIGN(vb->size);
+	}
+
 	switch(pcdev->cur_mode) {
 	case ISP_YUV_OUT:
 	case ISP_RGB_OUT:
@@ -454,7 +708,9 @@ static void ak_videobuf_queue(struct videobuf_queue *vq,
 		break;
 
 	default:
-		printk("The working mode of ISP hasn't been initialized.\n");
+		if (ak_cam_queue_note_locked(pcdev, AK_CAM_QUEUE_MODE_UNSET))
+			pr_warn("ak_camera: QBUF with the ISP working mode still unset (%d); counted in queue_stats from here on\n",
+				pcdev->cur_mode);
 		break;
 	}
 }
@@ -570,14 +826,12 @@ static int irq_handle_single_mode(struct videobuf_buffer *vb, struct ak_camera_d
 		ispdrv_vi_start_capturing();
 	} else {
 		ispdrv_vo_disable_buffer(BUFFER_ONE);
-		ispdrv_vi_stop_capturing();
 		pcdev->list_state = LIST_ZERO;
 	}
 
 	return 0;
 }
 
-static unsigned long sjf = 0;
 static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 {
 	int video_data_err = 0;
@@ -588,6 +842,7 @@ static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 	struct list_head *next;
 	static struct list_head *save_list;
 	unsigned long ul , ul2;
+	unsigned int gap_ms;
 	int fps = 10;
 	AK_ISP_SENSOR_CB *sensor_cb;
 
@@ -607,8 +862,13 @@ static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 		ul -= sjf;
 	else
 		ul = (~(unsigned long)0) - sjf+ ul;
-	if (jiffies_to_msecs(ul) > video_frame_interval) {
-		printk(KERN_ERR ">%d, sjf:%lu, ul:%lu\n", video_frame_interval, sjf, ul);
+	gap_ms = jiffies_to_msecs(ul);
+	if (gap_ms > video_frame_interval) {
+		if (gap_ms > pcdev->irq_stats.max_gap_ms)
+			pcdev->irq_stats.max_gap_ms = gap_ms;
+		if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_LATE_FRAME))
+			pr_warn("ak_camera: inter-frame gap %ums over the %dms budget; further gaps are counted in the irq_stats attribute only\n",
+				gap_ms, video_frame_interval);
 		_tdnr_flag = 1;
 	}
 	sjf = ul2;
@@ -619,8 +879,6 @@ static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 
 	next = pcdev->capture.next;
 	if (next == &pcdev->capture) {
-		printk("Error, camera no buffer, but run to irq\n");
-		ispdrv_vi_stop_capturing();
 		return 0;
 	}
 
@@ -629,16 +887,22 @@ static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 	if (id == -1)
 	{
 		if ((vb->field_count > 1) && (save_list != next )) {
-			printk("%s %d: vb->i=%d, but id %d\n", __func__,__LINE__, vb->i, id);
+			if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_ID_INVALID))
+				pr_warn("ak_camera: hardware reports no frame buffer in use while vb->i=%d is queued; counted in irq_stats from here on\n",
+					vb->i);
 			save_list = next;
 		}
 		return 0;
 	} else if ((id & 0x7F) != vb->i) {
-		printk("vb->i=%d, but id %d\n", vb->i, id);
+		if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_ID_MISMATCH))
+			pr_warn("ak_camera: hardware frame buffer id %d does not match queued vb->i=%d; counted in irq_stats from here on\n",
+				id, vb->i);
 		return 0;
 	} else if (id >= 0x80) {
 		if ((id & 0x7F) != vb->i) {
-			printk("~~%s %d: vb->i=%d, but id %d\n", __func__,__LINE__, vb->i, id);
+			if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_ID_ERROR))
+				pr_warn("ak_camera: errored hardware frame buffer id %d does not match queued vb->i=%d; counted in irq_stats from here on\n",
+					id, vb->i);
 			return 0;
 		}
 
@@ -671,7 +935,8 @@ static int irq_handle_continous_mode(struct ak_camera_dev *pcdev)
 
 	} else {
 		pcdev->cur_buf_id = -1;
-		printk("Warnning, lost frame at %ld\n", jiffies);
+		if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_LOST_FRAME))
+			pr_warn("ak_camera: capture list down to one buffer, dropping frames; further losses are counted in the irq_stats attribute only\n");
 	}
 
 	return 0;
@@ -691,9 +956,14 @@ static irqreturn_t ak_camera_dma_irq(int channel, void *data)
 	spin_lock_irqsave(&pcdev->lock, flags);
 
 	if (!((stat = ispdrv_vo_check_irq_status()) & 0x01)) {
+		bool report;
+
 		ispdrv_vo_clear_irq_status(0xfffe);
+		report = ak_cam_irq_note(pcdev, AK_CAM_IRQ_SPURIOUS);
 		spin_unlock_irqrestore(&pcdev->lock, flags);
-		printk("%s %d stat:0x%lx\n", __func__, __LINE__, stat);
+		if (report)
+			pr_warn("ak_camera: interrupt with no frame-done bit, stat 0x%lx; counted in irq_stats from here on\n",
+				stat);
 		return IRQ_HANDLED;
 //		goto out;
 	}
@@ -701,7 +971,8 @@ static irqreturn_t ak_camera_dma_irq(int channel, void *data)
 	ispdrv_irq_work();
 	if (pcdev->list_state == LIST_ZERO)
 	{
-		printk("%s: state not handled\n", __func__);
+		if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_LIST_ZERO))
+			pr_warn("ak_camera: interrupt with an empty capture list; counted in irq_stats from here on\n");
 		goto out;
 	}
 
@@ -709,7 +980,12 @@ static irqreturn_t ak_camera_dma_irq(int channel, void *data)
 		ak_active = list_entry(pcdev->capture.next,
 						   struct ak_buffer, vb.queue);
 		vb = &ak_active->vb;
-		WARN_ON(ak_active->inwork || list_empty(&vb->queue));
+		if (ak_active->inwork || list_empty(&vb->queue)) {
+			if (ak_cam_irq_note(pcdev, AK_CAM_IRQ_ACTIVE_BUSY))
+				pr_warn("ak_camera: frame done on buf[%d] with inwork=%d, queued=%d; counted in irq_stats from here on\n",
+					vb->i, ak_active->inwork,
+					!list_empty(&vb->queue));
+		}
 		irq_handle_single_mode(vb, pcdev);
 	} else {
 		irq_handle_continous_mode(pcdev);
@@ -727,6 +1003,46 @@ out:
 static void isp_awb_work(struct work_struct *work)
 {
 	ispdrv_awb_work();
+}
+
+static void isp_copy_mdinfo(struct ak_camera_dev *pcdev)
+{
+	int id = pcdev->cur_buf_id;
+	void *yuv_paddr, *mdinfo, *vbase;
+	u32 base, dst;
+
+	if (id < 0 || id >= AK_CAM_VO_BUFFERS)
+		return;
+
+	base = pcdev->buf_paddr[id];
+	vbase = pcdev->buf_vaddr[id];
+
+	ispdrv_get_yuvaddr_and_mdinfo(id, &yuv_paddr, &mdinfo);
+	dst = (u32)yuv_paddr;
+
+	if (!base || !mdinfo)
+		return;
+
+	if (dst < base || dst + AK_CAM_MDINFO_SIZE > base + pcdev->buf_size) {
+		if (!pcdev->mdinfo_oob_logged) {
+			pcdev->mdinfo_oob_logged = true;
+			pr_debug("ak_camera: ISP motion-detection statistics would land at %08x+%x, outside capture buffer %d [%08x..%08x); not copied, capture continues. Geometry and buffer size disagree. Reported once per open\n",
+				 dst, AK_CAM_MDINFO_SIZE, id,
+				 base, base + pcdev->buf_size);
+		}
+		return;
+	}
+
+	if (!vbase) {
+		if (!pcdev->mdinfo_unmapped_logged) {
+			pcdev->mdinfo_unmapped_logged = true;
+			pr_debug("%s: capture buffer %d has no kernel mapping, skipping the md-info copy; normal for V4L2_MEMORY_USERPTR. Reported once per open\n",
+				 __func__, id);
+		}
+		return;
+	}
+
+	memcpy(vbase + (dst - base), mdinfo, AK_CAM_MDINFO_SIZE);
 }
 
 static void isp_ae_work(struct work_struct *work)
@@ -773,19 +1089,9 @@ static void isp_ae_work(struct work_struct *work)
 
 	ispdrv_ae_work();
 
-	if (pcdev->cur_buf_id != -1) {
-		void *yuv_paddr, *mdinfo;
-		void *yuv_vaddr;
+	isp_copy_mdinfo(pcdev);
 
-		ispdrv_get_yuvaddr_and_mdinfo(pcdev->cur_buf_id,
-						&yuv_paddr, &mdinfo);
-		yuv_vaddr = ioremap_nocache((unsigned long)yuv_paddr, 1024);
-		if (yuv_vaddr) {
-			memcpy(yuv_vaddr, mdinfo, 1024);
-			iounmap(yuv_vaddr);
-		}
-		pcdev->cur_buf_id = -1;
-	}
+	pcdev->cur_buf_id = -1;
 
 	if (_tdnr_flag && !_tdnr_set) {
 		ispdrv_set_td();
@@ -809,6 +1115,11 @@ static void isp_ae_work(struct work_struct *work)
 #define REG32(_reg)		(*(volatile unsigned long *)(_reg))
 #define CLOCK_PERI_PLL_CTRL1	(AK_VA_SYSCTRL + 0x14)
 #define CLOCK_PERI_PLL_CTRL2	(AK_VA_SYSCTRL + 0x18)
+
+#define CIS_SCLK_DIV_SHIFT	10
+#define CIS_SCLK_DIV_MASK	(0x3f << CIS_SCLK_DIV_SHIFT)
+#define CIS_SCLK_DIV_UPDATE	(1 << 19)
+#define CIS_SCLK_ENABLE		(1 << 18)
 
 static unsigned long ak_get_peri_pll_clk(void)
 {
@@ -839,12 +1150,18 @@ static void set_sensor_cis_sclk(unsigned int cis_sclk)
 	cis_sclk_div = peri_pll/cis_sclk - 1;
 
 	regval = REG32(CLOCK_PERI_PLL_CTRL2);
-	regval &= ~(0x3f << 10);
-	regval |= (cis_sclk_div << 10);
-	REG32(CLOCK_PERI_PLL_CTRL2) = (1 << 19)|regval;
+	regval &= ~CIS_SCLK_DIV_MASK;
+	regval |= (cis_sclk_div << CIS_SCLK_DIV_SHIFT);
+	REG32(CLOCK_PERI_PLL_CTRL2) = CIS_SCLK_DIV_UPDATE | regval;
+	REG32(CLOCK_PERI_PLL_CTRL2) |= CIS_SCLK_ENABLE;
 
 	isp_dbg("%s() cis_sclk=%dMHz peri_pll=%dMHz cis_sclk_div=%d\n",
 			__func__, cis_sclk, peri_pll, cis_sclk_div);
+}
+
+static void disable_sensor_cis_sclk(void)
+{
+	REG32(CLOCK_PERI_PLL_CTRL2) &= ~CIS_SCLK_ENABLE;
 }
 
 static int set_sensor_interface(struct ak_camera_dev *pcdev,
@@ -903,6 +1220,7 @@ static int ak_camera_add_device(struct soc_camera_device *icd)
 	int sensor_io_level = SENSOR_IO_LEVEL_1V8;
 	enum sensor_bus_type sensor_bus_type = BUS_TYPE_RAW;
 	unsigned long sensor_mclk = pcdev->mclk;
+	unsigned long running_mclk;
 	AK_ISP_SENSOR_CB *sensor_cb;
 	int cam_allocated = 0;
 	int ret;
@@ -919,6 +1237,17 @@ static int ak_camera_add_device(struct soc_camera_device *icd)
 		return -EBUSY;
 	}
 
+	memset(pcdev->buf_paddr, 0, sizeof(pcdev->buf_paddr));
+	memset(pcdev->buf_vaddr, 0, sizeof(pcdev->buf_vaddr));
+	pcdev->buf_size = 0;
+	pcdev->cur_buf_id = -1;
+	pcdev->mdinfo_oob_logged = false;
+	pcdev->mdinfo_unmapped_logged = false;
+	memset(&pcdev->irq_stats, 0, sizeof(pcdev->irq_stats));
+	pcdev->irq_reported = 0;
+	memset(&pcdev->queue_stats, 0, sizeof(pcdev->queue_stats));
+	pcdev->queue_reported = 0;
+
 	cam = icd->host_priv;
 	if (!cam) {
 		cam = kzalloc(sizeof(*cam), GFP_KERNEL);
@@ -927,8 +1256,24 @@ static int ak_camera_add_device(struct soc_camera_device *icd)
 		cam_allocated = 1;
 	}
 
+	/* Sensor interface up at the board's declared mclk, then let the
+	 * subdev identify itself over I2C. */
+	clk_prepare_enable(pcdev->clk);
+	REG32(CLOCK_PERI_PLL_CTRL1) &= ~(0x01<<25);
+
+	ret = set_sensor_interface(pcdev, sensor_interface);
+	if (ret)
+		goto err_isp_clk;
+
+	running_mclk = sensor_mclk;
+	set_sensor_cis_sclk(running_mclk);
+
 	/********** config sensor module **********/
-	v4l2_subdev_call(sd, core, init, 0);
+	ret = v4l2_subdev_call(sd, core, init, 0);
+	if (ret && ret != -ENOIOCTLCMD) {
+		dev_err(icd->parent, "sensor init failed: %d\n", ret);
+		goto err_sensor_clk;
+	}
 
 	sensor_cb = ak_sensor_get_sensor_cb();
 	if (sensor_cb) {
@@ -952,29 +1297,18 @@ static int ak_camera_add_device(struct soc_camera_device *icd)
 		"sensor bus %d, interface %d, IO level %d, mclk %luMHz\n",
 		sensor_bus_type, sensor_interface, sensor_io_level, sensor_mclk);
 
-	/* Platform data is the fallback for sensors without a clock callback. */
-	clk_enable(pcdev->cis_sclk);
-	set_sensor_cis_sclk(sensor_mclk);
+	/* The identified sensor overrides the board's declared mclk. */
+	if (sensor_mclk != running_mclk)
+		set_sensor_cis_sclk(sensor_mclk);
+
+	if (sensor_interface != DVP_INTERFACE) {
+		ret = set_sensor_interface(pcdev, sensor_interface);
+		if (ret)
+			goto err_sensor;
+	}
 
 	// load the default setting for sensor
 //	v4l2_subdev_call(sd, core, load_fw);
-
-	/********** config isp module **********/
-
-	// enable isp clock
-	clk_enable(pcdev->clk);
-//	printk("ISP CLOCK ENABLE \n");
-	REG32(CLOCK_PERI_PLL_CTRL1) &=~(0x01<<25);
-
-	ret = set_sensor_interface(pcdev, sensor_interface);
-	if (ret) {
-		clk_disable(pcdev->clk);
-		clk_disable(pcdev->cis_sclk);
-		v4l2_subdev_call(sd, core, reset, 0);
-		if (cam_allocated)
-			kfree(cam);
-		return ret;
-	}
 
 	if (cam_allocated)
 		icd->host_priv = cam;
@@ -983,6 +1317,16 @@ static int ak_camera_add_device(struct soc_camera_device *icd)
 		 icd->devnum);
 
 	return 0;
+
+err_sensor:
+	v4l2_subdev_call(sd, core, reset, 0);
+err_sensor_clk:
+	disable_sensor_cis_sclk();
+err_isp_clk:
+	clk_disable_unprepare(pcdev->clk);
+	if (cam_allocated)
+		kfree(cam);
+	return ret;
 }
 
 /**
@@ -1013,10 +1357,10 @@ static void ak_camera_remove_device(struct soc_camera_device *icd)
 	mdelay(500);
 
 	/* disable the clock of isp module */
-	clk_disable(pcdev->clk);
+	clk_disable_unprepare(pcdev->clk);
 
 	/* disable sensor clk */
-	clk_disable(pcdev->cis_sclk);
+	disable_sensor_cis_sclk();
 	//ak_soft_reset(AK_SRESET_CAMERA);
 
 	dev_info(icd->parent, "AK Camera driver detached from camera %d\n",
@@ -1346,7 +1690,6 @@ static int ak_camera_get_formats(struct soc_camera_device *icd, unsigned int idx
 				code <= MEDIA_BUS_FMT_YVYU10_1X20) {
 			pcdev->def_mode = ISP_YUV_VIDEO_OUT;
 			//pcdev->def_mode = ISP_YUV_OUT;
-			printk(KERN_ERR "set yuv video out\n");
 		} else {
 			pcdev->def_mode = ISP_RGB_VIDEO_OUT;
 		}
@@ -1573,11 +1916,44 @@ static struct soc_camera_host_ops ak_soc_camera_host_ops = {
 	.set_parm		= ak_camera_set_parm,
 };
 
+static int ak_camera_claim_pool(struct platform_device *pdev, size_t *bytes)
+{
+	struct device_node *np;
+	struct resource res;
+	int err;
+
+	np = of_parse_phandle(pdev->dev.of_node, "memory-region", 0);
+	if (!np) {
+		dev_err(&pdev->dev, "no memory-region for the capture pool\n");
+		return -ENODEV;
+	}
+
+	err = of_address_to_resource(np, 0, &res);
+	of_node_put(np);
+	if (err) {
+		dev_err(&pdev->dev, "capture pool has no usable reg\n");
+		return err;
+	}
+
+	err = of_reserved_mem_device_init(&pdev->dev);
+	if (err) {
+		dev_err(&pdev->dev, "cannot claim the capture pool: %d\n", err);
+		return err;
+	}
+
+	*bytes = resource_size(&res);
+	dev_info(&pdev->dev, "capture pool at %pa, %zu KiB\n",
+		 &res.start, *bytes / 1024);
+
+	return 0;
+}
+
 static int ak_camera_probe(struct platform_device *pdev)
 {
 	struct ak_camera_dev *pcdev;
-	struct clk *clk, *cis_sclk;
+	struct clk *clk;
 	unsigned int irq;
+	size_t pool_bytes;
 	int err = 0;
 
 	CAMDBG("entry %s\n", __func__);
@@ -1589,22 +1965,17 @@ static int ak_camera_probe(struct platform_device *pdev)
 		goto exit;
 	}
 
+	err = ak_camera_claim_pool(pdev, &pool_bytes);
+	if (err)
+		goto exit;
+
 	/*
 	  * @get isp working clock
 	  */
 	clk = clk_get(&pdev->dev, "camera");
 	if (IS_ERR(clk)) {
 		err = PTR_ERR(clk);
-		goto exit;
-	}
-
-	/*
-	  * @get cis_sclk for sensor
-	  */
-	cis_sclk = clk_get(&pdev->dev, "sensor");
-	if (IS_ERR(cis_sclk)) {
-		err = PTR_ERR(cis_sclk);
-		goto exit_put_clk;
+		goto exit_release_pool;
 	}
 
 	/*
@@ -1614,7 +1985,7 @@ static int ak_camera_probe(struct platform_device *pdev)
 	pcdev = kzalloc(sizeof(*pcdev), GFP_KERNEL);
 	if (!pcdev) {
 		err = -ENOMEM;
-		goto exit_put_cisclk;
+		goto exit_put_clk;
 	}
 
 	/* @initailization for struct pcdev */
@@ -1626,7 +1997,7 @@ static int ak_camera_probe(struct platform_device *pdev)
 	INIT_WORK(&pcdev->resume_work, ak_camera_resume_work);
 //	pcdev->res = res;
 	pcdev->clk = clk;
-	pcdev->cis_sclk = cis_sclk;
+	pcdev->pool_bytes = pool_bytes;
 
 	pcdev->list_state = LIST_ZERO;
 	pcdev->free_list = LIST_ZERO;
@@ -1685,18 +2056,33 @@ static int ak_camera_probe(struct platform_device *pdev)
 	}
 	pcdev->cur_buf_id = -1;
 
+	err = device_create_file(&pdev->dev, &dev_attr_irq_stats);
+	if (err)
+		goto exit_unregister_host;
+
+	err = device_create_file(&pdev->dev, &dev_attr_queue_stats);
+	if (err)
+		goto exit_remove_irq_stats;
+
+	if (device_create_file(&pdev->dev, &dev_attr_dma_coherent_pool))
+		dev_warn(&pdev->dev, "no dma_coherent_pool attribute\n");
+
 	dev_info(&pdev->dev, "AK Camera driver loaded\n");
 
 	return 0;
 
+exit_remove_irq_stats:
+	device_remove_file(&pdev->dev, &dev_attr_irq_stats);
+exit_unregister_host:
+	soc_camera_host_unregister(&pcdev->soc_host);
 exit_freeirq:
 	free_irq(irq, pcdev);
 exit_isp_fini:
 	kfree(pcdev);
-exit_put_cisclk:
-	clk_put(cis_sclk);
 exit_put_clk:
 	clk_put(clk);
+exit_release_pool:
+	of_reserved_mem_device_release(&pdev->dev);
 exit:
 	return err;
 }
@@ -1709,6 +2095,10 @@ static int ak_camera_remove(struct platform_device *pdev)
 
 	CAMDBG("entry %s\n", __func__);
 
+	device_remove_file(&pdev->dev, &dev_attr_dma_coherent_pool);
+	device_remove_file(&pdev->dev, &dev_attr_queue_stats);
+	device_remove_file(&pdev->dev, &dev_attr_irq_stats);
+
 	soc_camera_host_unregister(soc_host);
 
 	cancel_work_sync(&pcdev->resume_work);
@@ -1716,11 +2106,14 @@ static int ak_camera_remove(struct platform_device *pdev)
 	cancel_delayed_work_sync(&pcdev->ae_work);
 	free_irq(pcdev->irq, pcdev);
 
+	ak_camera_free_ref_frame(pcdev);
+
 	/* free clk */
-	clk_put(pcdev->cis_sclk);
 	clk_put(pcdev->clk);
 
 	kfree(pcdev);
+
+	of_reserved_mem_device_release(&pdev->dev);
 
 	dev_info(&pdev->dev, "AK Camera driver unloaded\n");
 

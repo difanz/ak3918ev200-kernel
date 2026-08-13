@@ -8,10 +8,67 @@
  */
 
 #include <linux/module.h>
+#include <linux/bitops.h>
 #include <linux/i2c.h>
+#include <linux/spinlock.h>
 #include <plat-anyka/ak_sensor_i2c.h>
 
 static struct i2c_client *g_client = NULL;
+
+enum ak_sensor_i2c_event {
+	AK_SENSOR_I2C_READ_RETRY,
+	AK_SENSOR_I2C_READ_FAIL,
+	AK_SENSOR_I2C_WRITE_RETRY,
+	AK_SENSOR_I2C_WRITE_FAIL,
+	AK_SENSOR_I2C_NO_CLIENT,
+	AK_SENSOR_I2C_EVENTS,
+};
+
+static const char * const ak_sensor_i2c_event_name[AK_SENSOR_I2C_EVENTS] = {
+	[AK_SENSOR_I2C_READ_RETRY]	= "read_retry",
+	[AK_SENSOR_I2C_READ_FAIL]	= "read_fail",
+	[AK_SENSOR_I2C_WRITE_RETRY]	= "write_retry",
+	[AK_SENSOR_I2C_WRITE_FAIL]	= "write_fail",
+	[AK_SENSOR_I2C_NO_CLIENT]	= "no_client",
+};
+
+static DEFINE_SPINLOCK(ak_sensor_i2c_stats_lock);
+static u32 ak_sensor_i2c_count[AK_SENSOR_I2C_EVENTS];
+static unsigned long ak_sensor_i2c_reported;
+
+static bool ak_sensor_i2c_note(enum ak_sensor_i2c_event ev, unsigned int n)
+{
+	unsigned long flags;
+	bool report;
+
+	spin_lock_irqsave(&ak_sensor_i2c_stats_lock, flags);
+	ak_sensor_i2c_count[ev] += n;
+	report = !(ak_sensor_i2c_reported & BIT(ev));
+	ak_sensor_i2c_reported |= BIT(ev);
+	spin_unlock_irqrestore(&ak_sensor_i2c_stats_lock, flags);
+
+	return report;
+}
+
+static ssize_t i2c_stats_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	u32 stats[AK_SENSOR_I2C_EVENTS];
+	unsigned long flags;
+	ssize_t len = 0;
+	int i;
+
+	spin_lock_irqsave(&ak_sensor_i2c_stats_lock, flags);
+	memcpy(stats, ak_sensor_i2c_count, sizeof(stats));
+	spin_unlock_irqrestore(&ak_sensor_i2c_stats_lock, flags);
+
+	for (i = 0; i < AK_SENSOR_I2C_EVENTS; i++)
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%s %u\n",
+				 ak_sensor_i2c_event_name[i], stats[i]);
+
+	return len;
+}
+static DEVICE_ATTR_RO(i2c_stats);
 
 /**
  * @brief: write sensor register by i2c bus
@@ -114,6 +171,19 @@ static s32 aksensor_i2c_read_word_data(u16 raddr)
 
 s32 ak_sensor_i2c_set_client(struct i2c_client *client)
 {
+	unsigned long flags;
+
+	if (client != g_client) {
+		spin_lock_irqsave(&ak_sensor_i2c_stats_lock, flags);
+		memset(ak_sensor_i2c_count, 0, sizeof(ak_sensor_i2c_count));
+		ak_sensor_i2c_reported = 0;
+		spin_unlock_irqrestore(&ak_sensor_i2c_stats_lock, flags);
+
+		if (client &&
+		    device_create_file(&client->dev, &dev_attr_i2c_stats))
+			dev_warn(&client->dev, "no i2c_stats attribute\n");
+	}
+
 	g_client = client;
 	return 0;
 }
@@ -125,7 +195,9 @@ s32 sensor_read_register(T_SENSOR_I2C_DATA_S *pI2cData)
 	s32 ret = 0;
 
 	if (!g_client) {
-		printk(KERN_ERR "%s g_client is NULL\n", __func__);
+		if (ak_sensor_i2c_note(AK_SENSOR_I2C_NO_CLIENT, 1))
+			printk(KERN_ERR "%s g_client is NULL; counted in i2c_stats from here on\n",
+			       __func__);
 		return 0;
 	}
 
@@ -154,11 +226,15 @@ __retry:
 	}
 
 	if (retry > 0) {
-		printk(KERN_ERR "i2c read dev:0x%x reg[0x%x] retry:%d\n", (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr, retry);
+		if (ak_sensor_i2c_note(AK_SENSOR_I2C_READ_RETRY, retry))
+			printk(KERN_ERR "i2c read dev:0x%x reg[0x%x] retry:%d; further retries are counted in i2c_stats only\n",
+			       (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr, retry);
 	}
 
 	if (ret < 0) {
-		printk(KERN_ERR "i2c read dev:0x%x reg[0x%x] fail\n", (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr);
+		if (ak_sensor_i2c_note(AK_SENSOR_I2C_READ_FAIL, 1))
+			printk(KERN_ERR "i2c read dev:0x%x reg[0x%x] fail; counted in i2c_stats from here on\n",
+			       (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr);
 	}
 
 	return ret;
@@ -171,7 +247,9 @@ s32 sensor_write_register(T_SENSOR_I2C_DATA_S *pI2cData)
 	s32 ret = 0;
 
 	if (!g_client) {
-		printk(KERN_ERR "%s g_client is NULL\n", __func__);
+		if (ak_sensor_i2c_note(AK_SENSOR_I2C_NO_CLIENT, 1))
+			printk(KERN_ERR "%s g_client is NULL; counted in i2c_stats from here on\n",
+			       __func__);
 		return -1;
 	}
 
@@ -200,11 +278,15 @@ __retry:
 	}
 
 	if (retry > 0) {
-		printk(KERN_ERR "i2c write dev:0x%x reg[0x%x] data[0x%x] retry:%d\n", (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr, pI2cData->u32Data, retry);
+		if (ak_sensor_i2c_note(AK_SENSOR_I2C_WRITE_RETRY, retry))
+			printk(KERN_ERR "i2c write dev:0x%x reg[0x%x] data[0x%x] retry:%d; further retries are counted in i2c_stats only\n",
+			       (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr, pI2cData->u32Data, retry);
 	}
 
 	if (ret < 0) {
-		printk(KERN_ERR "i2c write dev:0x%x reg[0x%x] data[0x%x] fail\n", (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr, pI2cData->u32Data);
+		if (ak_sensor_i2c_note(AK_SENSOR_I2C_WRITE_FAIL, 1))
+			printk(KERN_ERR "i2c write dev:0x%x reg[0x%x] data[0x%x] fail; counted in i2c_stats from here on\n",
+			       (pI2cData->u8DevAddr >> 1) << 1, pI2cData->u32RegAddr, pI2cData->u32Data);
 	}
 
 	return ret;

@@ -18,6 +18,7 @@
 #include <linux/videodev2.h>
 
 #include <media/soc_camera.h>
+#include <media/v4l2-async.h>
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-ctrls.h>
 
@@ -105,6 +106,8 @@ static struct aksensor_priv *to_aksensor(const struct i2c_client *client)
  * @return sensor_info * camera device pointer
  * @retval
  */ 
+static int aksensor_identify(struct i2c_client *client);
+
 static AK_ISP_SENSOR_CB *probe_sensors(struct i2c_client *client)
 {
 	struct aksensor_priv *priv = to_aksensor(client);
@@ -145,8 +148,15 @@ static AK_ISP_SENSOR_CB *probe_sensors(struct i2c_client *client)
 static int aksensor_init(struct v4l2_subdev *sd, u32 val)
 {
 	struct aksensor_priv *priv = container_of(sd, struct aksensor_priv, subdev);
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	int ret;
 
 	SENDBG("entry %s\n", __func__);
+
+	ret = aksensor_identify(client);
+	if (ret)
+		return ret;
+
 	return cur_sensor_info->sensor_set_power_on_func(priv->info->pin_pwdn, priv->info->pin_reset);
 }
 
@@ -163,12 +173,15 @@ static int aksensor_reset( struct v4l2_subdev *sd, u32 val )
 	struct aksensor_priv *priv = container_of(sd, struct aksensor_priv, subdev);
 
 	SENDBG("entry %s\n", __func__);
+
+	if (!cur_sensor_info)
+		return 0;
+
 	return cur_sensor_info->sensor_set_power_off_func(priv->info->pin_pwdn, priv->info->pin_reset);
 }
 
 static int aksensor_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
-	printk(KERN_ERR "%s no support any ctrl\n", __func__);
 	return -1;
 }
 
@@ -182,7 +195,6 @@ static int aksensor_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
  */
 static int aksensor_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
-	printk(KERN_ERR "%s no support any ctrl\n", __func__);
 	return -1;
 }
 
@@ -206,13 +218,13 @@ static int aksensor_s_stream(struct v4l2_subdev *sd, int enable)
 	case 0:
 	case -2:
 		/* standby */
-		printk("aksensor_s_stream standby.\n");
+		pr_debug("aksensor_s_stream standby.\n");
 		cur_sensor_info->sensor_set_standby_in_func(priv->info->pin_pwdn, priv->info->pin_reset);
 		break;
 	case 1:
 	case -1:
 		/* normal */
-		printk("aksensor_s_stream resume.\n");
+		pr_debug("aksensor_s_stream resume.\n");
 		cur_sensor_info->sensor_set_standby_out_func(priv->info->pin_pwdn, priv->info->pin_reset);
 		break;
 	default:
@@ -367,26 +379,24 @@ static int aksensor_s_crop(struct v4l2_subdev *sd, const struct v4l2_crop *a)
 	return 0;
 }
 
-static int aksensor_video_probe(struct i2c_client *client)
+/* Called through v4l2_subdev_core_ops::init, once the host has the sensor
+ * interface running. */
+static int aksensor_identify(struct i2c_client *client)
 {
 	struct aksensor_priv *priv = to_aksensor(client);
 	enum sensor_bus_type bus_type;
-		
+	int width, height;
+	int w, h;
+
 	SENDBG("entry %s\n", __func__);
 
-	/*
-	 * check and show product ID and manufacturer ID
-	 */
-	ak_sensor_i2c_set_client(client);
-	if (cur_sensor_info != NULL) {
-		dev_info(&client->dev, "Probing Sensor ID 0x%x\n",
-				cur_sensor_info->sensor_read_id_func());
-	} else {
-		cur_sensor_info = probe_sensors(client);
-		if (cur_sensor_info == NULL) {
-			dev_err(&client->dev,  "Sensor ID error\n");
-			return -ENODEV;	
-		}
+	if (cur_sensor_info != NULL)
+		return 0;
+
+	cur_sensor_info = probe_sensors(client);
+	if (cur_sensor_info == NULL) {
+		dev_err(&client->dev,  "Sensor ID error\n");
+		return -ENODEV;
 	}
 
 	bus_type = cur_sensor_info->sensor_get_bus_type_func();
@@ -409,6 +419,19 @@ static int aksensor_video_probe(struct i2c_client *client)
 	}
 	
 	priv->model = cur_sensor_info->sensor_read_id_func();
+
+	/* register sensor callback to ISPDRV */
+	ak_sensor_set_sensor_cb(cur_sensor_info);
+
+	// init sensor resolution, default VGA
+	cur_sensor_info->sensor_get_resolution_func(&width, &height);
+	cur_sensor_info->sensor_get_valid_coordinate_func(&w, &h);
+	width -= w;
+	height -= h;
+	priv->win.width = width;
+	priv->win.height = height;
+	sensor_dbg("%s: priv->win.width=%d priv->win.height=%d\n",
+			__func__, priv->win.width, priv->win.height);
 
 	return 0;
 }
@@ -434,7 +457,8 @@ static int aksensor_g_mbus_config(struct v4l2_subdev *sd,
 		V4L2_MBUS_VSYNC_ACTIVE_HIGH | V4L2_MBUS_HSYNC_ACTIVE_HIGH |
 		V4L2_MBUS_DATA_ACTIVE_HIGH;
 	cfg->type = V4L2_MBUS_PARALLEL;
-	cfg->flags = soc_camera_apply_board_flags(ssdd, cfg);
+	if (ssdd)
+		cfg->flags = soc_camera_apply_board_flags(ssdd, cfg);
 	SENDBG("leave %s\n", __func__);
 
 	return 0;
@@ -480,11 +504,8 @@ static struct v4l2_subdev_ops aksensor_subdev_ops = {
 /*
  * i2c_driver function
  */
-/*
- * Read the sensor reset/pwdn GPIOs from the DT node. An unwired pin
- * (pwdn = <&gpio 0xffff 1>) resolves to a negative gpio and is kept as
- * the 0xffff "none" sentinel the power sequence expects.
- */
+#define AKSENSOR_INVALID_GPIO	((unsigned long)-1)
+
 static struct aksensor_camera_info *aksensor_parse_of(struct i2c_client *client)
 {
 	struct device_node *np = client->dev.of_node;
@@ -495,11 +516,14 @@ static struct aksensor_camera_info *aksensor_parse_of(struct i2c_client *client)
 	if (!info)
 		return NULL;
 
+	info->pin_avdd = AKSENSOR_INVALID_GPIO;
+	info->pin_power = AKSENSOR_INVALID_GPIO;
+
 	gpio = of_get_named_gpio(np, "reset-gpio", 0);
-	info->pin_reset = (gpio >= 0) ? gpio : 0xffff;
+	info->pin_reset = (gpio >= 0) ? gpio : AKSENSOR_INVALID_GPIO;
 
 	gpio = of_get_named_gpio(np, "pwdn-gpio", 0);
-	info->pin_pwdn = (gpio >= 0) ? gpio : 0xffff;
+	info->pin_pwdn = (gpio >= 0) ? gpio : AKSENSOR_INVALID_GPIO;
 
 	return info;
 }
@@ -512,8 +536,6 @@ static int aksensor_probe(struct i2c_client *client,
 	struct i2c_adapter        *adapter = to_i2c_adapter(client->dev.parent);
 	struct aksensor_camera_info *info;
 	int ret;
-	int width, height;
-	int w, h;
 
 	SENDBG("entry %s\n", __func__);
 
@@ -542,15 +564,7 @@ static int aksensor_probe(struct i2c_client *client,
 
 	priv->info = info;
 	v4l2_i2c_subdev_init(&priv->subdev, client, &aksensor_subdev_ops);
-
-	ret = aksensor_video_probe(client);
-	if (ret) {
-		kfree(priv);
-		return ret;
-	}
-
-	/* register sensor callback to ISPDRV */
-	ak_sensor_set_sensor_cb(cur_sensor_info);
+	ak_sensor_i2c_set_client(client);
 
 #if 0
 	v4l2_ctrl_handler_init(&priv->hdl, cur_sensor_info->nr_ctrls);
@@ -565,26 +579,24 @@ static int aksensor_probe(struct i2c_client *client,
 	}
 #endif
 
-	// init sensor resolution, default VGA
-	cur_sensor_info->sensor_get_resolution_func(&width, &height);
-	cur_sensor_info->sensor_get_valid_coordinate_func(&w, &h);
-	width -= w;
-	height -= h;
-	priv->win.width = width; 
-	priv->win.height = height;
-	/*printk(KERN_ERR "%s: priv->win.width=%d priv->win.height=%d\n",
-	  __func__, priv->win.width, priv->win.height);*/
-	sensor_dbg("%s: priv->win.width=%d priv->win.height=%d\n",
-			__func__, priv->win.width, priv->win.height);
-	return ret;
+	ret = v4l2_async_register_subdev(&priv->subdev);
+	if (ret) {
+		kfree(priv);
+		return ret;
+	}
+
+	return 0;
 }
 
 static int aksensor_remove(struct i2c_client *client)
 {
 	struct aksensor_priv *priv = to_aksensor(client);
 
-	cur_sensor_info->sensor_set_power_off_func(priv->info->pin_pwdn, priv->info->pin_reset);
-	
+	if (cur_sensor_info)
+		cur_sensor_info->sensor_set_power_off_func(priv->info->pin_pwdn,
+							  priv->info->pin_reset);
+
+	v4l2_async_unregister_subdev(&priv->subdev);
 	v4l2_device_unregister_subdev(&priv->subdev);
 	//v4l2_ctrl_handler_free(&priv->hdl);
 	kfree(priv);
@@ -624,7 +636,6 @@ static int __init aksensor_module_init(void)
 {
 	SENDBG("entry %s\n", __func__);
 
-	printk(KERN_ERR "%s\n", __func__);
 	return i2c_add_driver(&aksensor_i2c_driver);
 }
 

@@ -1352,6 +1352,9 @@ Old 3DNR Para
  * instead of at bit 31 of the OSD address word. */
 #define     PP_MAIN_OSD_EN          22
 #define     PP_SUB_OSD_EN           23
+#define     OSD_DMA_ADDR(addr)      (addr)
+#else
+#define     OSD_DMA_ADDR(addr)      LOW_BITS((addr), 30)
 #endif
 
 /*

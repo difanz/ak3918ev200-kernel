@@ -84,6 +84,7 @@ typedef struct isp2_struct {
     int	linkage_para_update_flag;
     int	linkage_ccm_update_flag;
 	int linkage_hue_update_flag;
+	int awb_needs_seed;
     enum  envi_flag curr_envi_flag;
     enum isp2_colortemp_mode last_colortemp;
 	int main_osd_chn_update_flag[OSD_CHN_NUM];

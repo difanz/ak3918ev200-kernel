@@ -176,3 +176,9 @@ int ispdrv_vo_get_inputdataw(void)
 	return ak_isp_vo_get_inputdataw();
 }
 EXPORT_SYMBOL(ispdrv_vo_get_inputdataw);
+
+int ispdrv_vp_set_3d_nr_ref_addr(AK_ISP_3D_NR_REF_ATTR *ref)
+{
+	return ak_isp_vp_set_3d_nr_ref_addr(ref);
+}
+EXPORT_SYMBOL(ispdrv_vp_set_3d_nr_ref_addr);

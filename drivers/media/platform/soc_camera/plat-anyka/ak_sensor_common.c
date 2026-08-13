@@ -28,12 +28,24 @@ EXPORT_SYMBOL_GPL(ak_sensor_write_register);
 
 int ak_sensor_set_pin_as_gpio(const int pin)
 {
-	return gpio_request_one(pin, GPIOF_OUT_INIT_LOW, "ak_sensor");
+	int ret;
+
+	if (!gpio_is_valid(pin))
+		return 0;
+
+	ret = gpio_request_one(pin, GPIOF_OUT_INIT_LOW, "ak_sensor");
+	if (ret == -EBUSY)
+		return 0;
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(ak_sensor_set_pin_as_gpio);
 
 int ak_sensor_set_pin_dir(const int pin, const int is_output)
 {
+	if (!gpio_is_valid(pin))
+		return 0;
+
 	if (is_output)
 		return gpio_direction_output(pin, 0);
 	else
@@ -43,6 +55,9 @@ EXPORT_SYMBOL_GPL(ak_sensor_set_pin_dir);
 
 int ak_sensor_set_pin_level(const int pin, const int level)
 {
+	if (!gpio_is_valid(pin))
+		return 0;
+
 	gpio_set_value(pin, level ? 1 : 0);
 	return 0;
 }

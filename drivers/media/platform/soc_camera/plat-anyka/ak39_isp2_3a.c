@@ -437,17 +437,6 @@ int  ak_isp_vp_set_awb_attr( AK_ISP_AWB_ATTR *p_awb)
 {
     isp_dbg("%s enter.\n", __func__);
     memcpy(&(isp->awb_para),p_awb,sizeof(AK_ISP_AWB_ATTR));
-	
-	//disable d75_1, for all RGB staticse
-	isp->awb_para.gr_low[9] = 0;
-	isp->awb_para.gr_high[9] = 1023;
-	isp->awb_para.gb_low[9] = 0;
-	isp->awb_para.gb_high[9] = 1023;
-	isp->awb_para.rb_low[9] = 0;
-	isp->awb_para.rb_high[9] = 1023;
-	
-	isp->linkage_ccm_update_flag =1;
-	isp->linkage_hue_update_flag=1;
 
     return 0;
 }
@@ -1473,9 +1462,18 @@ int ak_isp_awb_work(void)
 		//calc wb gain
 		if(_calc_awb_gain(isp->awb_stat_info_para.current_colortemp_index)>=0)
 		{
-			isp->awb_stat_info_para.r_gain = (isp->awb_stat_info_para.r_gain+isp->awb_algo.calc_r_gain)/2;
-			isp->awb_stat_info_para.g_gain = (isp->awb_stat_info_para.g_gain+isp->awb_algo.calc_g_gain)/2;
-			isp->awb_stat_info_para.b_gain = (isp->awb_stat_info_para.b_gain+isp->awb_algo.calc_b_gain)/2;
+			if(isp->awb_needs_seed)
+			{
+				isp->awb_stat_info_para.r_gain = isp->awb_algo.calc_r_gain;
+				isp->awb_stat_info_para.g_gain = isp->awb_algo.calc_g_gain;
+				isp->awb_stat_info_para.b_gain = isp->awb_algo.calc_b_gain;
+			}
+			else
+			{
+				isp->awb_stat_info_para.r_gain = (isp->awb_stat_info_para.r_gain+isp->awb_algo.calc_r_gain)/2;
+				isp->awb_stat_info_para.g_gain = (isp->awb_stat_info_para.g_gain+isp->awb_algo.calc_g_gain)/2;
+				isp->awb_stat_info_para.b_gain = (isp->awb_stat_info_para.b_gain+isp->awb_algo.calc_b_gain)/2;
+			}
 
 			_awb_ex_ctrl(isp->awb_stat_info_para.current_colortemp_index, &wb_gain);
 			if(abs(wb_gain.r_gain-isp->awb_algo.target_r_gain)>5)
@@ -1484,6 +1482,14 @@ int ak_isp_awb_work(void)
 				isp->awb_algo.target_g_gain = wb_gain.g_gain;
 			if(abs(wb_gain.b_gain-isp->awb_algo.target_b_gain)>5)
 				isp->awb_algo.target_b_gain = wb_gain.b_gain;
+
+			if(isp->awb_needs_seed)
+			{
+				isp->awb_algo.current_r_gain = isp->awb_algo.target_r_gain;
+				isp->awb_algo.current_g_gain = isp->awb_algo.target_g_gain;
+				isp->awb_algo.current_b_gain = isp->awb_algo.target_b_gain;
+				isp->awb_needs_seed = 0;
+			}
 		}
 	}
 
@@ -2661,9 +2667,10 @@ static int _isp_contrast_work(enum  envi_flag envi_flag)
 		contrast.y_contrast = 256*64/(256-(contrast.y_shift>>2));
 	}
 
-	if(contrast.y_shift!=isp->contrast_setting.y_shift)
+	if(contrast.y_shift!=isp->contrast_setting.y_shift ||
+	   contrast.y_contrast!=isp->contrast_setting.y_contrast)
 		_set_contrast_attr(&contrast);
-	
+
 	return 0;
 }
 

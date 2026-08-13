@@ -1,4 +1,5 @@
 #include <linux/kernel.h>
+#include <linux/errno.h>
 #include <linux/string.h>
 #include <plat-anyka/ak_isp_drv.h>
 #include "ak39_isp2.h"
@@ -978,6 +979,7 @@ static int isp2_reg_init(void)
 		//isp->awb_algo.target_g_gain = isp->awb_algo.current_g_gain = wb_gain.g_gain = 255;
 		//isp->awb_algo.target_b_gain = isp->awb_algo.current_b_gain = wb_gain.b_gain = 255;
 		isp->awb_stat_info_para.current_colortemp_index=ISP2_COLORTEMP_MODE_D65;
+		isp->awb_needs_seed = 1;
 		isp->awb_algo.current_r_gain = isp->awb_stat_info_para.r_gain =  isp->awb_algo.target_r_gain = isp->mwb_para.r_gain;
 		isp->awb_algo.current_g_gain = isp->awb_stat_info_para.g_gain = isp->awb_algo.target_g_gain = isp->mwb_para.g_gain;
 		isp->awb_algo.current_b_gain = isp->awb_stat_info_para.b_gain = isp->awb_algo.target_b_gain = isp->mwb_para.b_gain;
@@ -1389,7 +1391,6 @@ int ak_isp_vp_set_blc_attr(AK_ISP_BLC_ATTR *p_blc)
 {
     isp_dbg("%s enter.\n", __func__);
     memcpy(&(isp->blc_para),p_blc,sizeof(AK_ISP_BLC_ATTR));
-    printk("isp_>blc_mode=%d",isp->blc_para.blc_mode);
 	//ak_isp_vo_update_setting();
 	isp->linkage_para_update_flag =1;
 
@@ -3786,7 +3787,7 @@ static unsigned int isp_main_osd_curr_paddr(int osd_chn)
 
 	switch (osd_chn) {
 		case 0:
-			paddr = LOW_BITS(isp->reg_blkaddr4[R4_MAIN_OSD], 30);
+			paddr = OSD_DMA_ADDR(isp->reg_blkaddr4[R4_MAIN_OSD]);
 			break;
 #ifndef CONFIG_CPU_AK3918EV200
 		case 1:
@@ -3810,7 +3811,7 @@ static unsigned int isp_sub_osd_curr_paddr(int osd_chn)
 
 	switch (osd_chn) {
 		case 0:
-			paddr = LOW_BITS(isp->reg_blkaddr4[R4_SUB_OSD], 30);
+			paddr = OSD_DMA_ADDR(isp->reg_blkaddr4[R4_SUB_OSD]);
 			break;
 #ifndef CONFIG_CPU_AK3918EV200
 		case 1:
@@ -3855,7 +3856,7 @@ int ak_isp_vpp_set_main_channel_osd_context_attr(AK_ISP_OSD_CONTEXT_ATTR *p_cont
 	osd_len = (osd_len < bytes_osd) ? osd_len:bytes_osd;
 
 	memcpy(p_osd_buffer, p_context, sizeof(AK_ISP_OSD_CONTEXT_ATTR));
-	if (LOW_BITS(handle_osd, 30) == isp_main_osd_curr_paddr(chn)) {
+	if (OSD_DMA_ADDR(handle_osd) == isp_main_osd_curr_paddr(chn)) {
 		memcpy(p_area_osd + bytes_osd, p_context->osd_context_addr, osd_len);
 		p_osd_buffer->osd_context_addr = (T_U32 *)(p_area_osd + bytes_osd);
 	} else {
@@ -3905,10 +3906,10 @@ static int ak_isp_vpp_set_main_channel_osd_context_attr_irq(void)
 #if 0
 		cmd = LOW_BITS(handle_osd, 30);
 #else
-		if (LOW_BITS(handle_osd, 30) == isp_main_osd_curr_paddr(chn)) {
-			cmd = LOW_BITS(handle_osd + bytes_osd, 30);
+		if (OSD_DMA_ADDR(handle_osd) == isp_main_osd_curr_paddr(chn)) {
+			cmd = OSD_DMA_ADDR(handle_osd + bytes_osd);
 		} else {
-			cmd = LOW_BITS(handle_osd, 30);
+			cmd = OSD_DMA_ADDR(handle_osd);
 		}
 #endif
 		isp->reg_blkaddr4[R4_MAIN_OSD] = cmd;
@@ -4188,7 +4189,7 @@ int ak_isp_vpp_set_sub_channel_osd_context_attr(AK_ISP_OSD_CONTEXT_ATTR *p_conte
 	osd_len = (osd_len < bytes_osd) ? osd_len:bytes_osd;
 
 	memcpy(p_osd_buffer, p_context, sizeof(AK_ISP_OSD_CONTEXT_ATTR));
-	if (LOW_BITS(handle_osd, 30) == isp_sub_osd_curr_paddr(chn)) {
+	if (OSD_DMA_ADDR(handle_osd) == isp_sub_osd_curr_paddr(chn)) {
 		memcpy(p_area_osd + bytes_osd, p_context->osd_context_addr, osd_len);
 		p_osd_buffer->osd_context_addr = (T_U32 *)(p_area_osd + bytes_osd);
 	} else {
@@ -4239,10 +4240,10 @@ static int ak_isp_vpp_set_sub_channel_osd_context_attr_irq(void)
 #if 0
 		cmd = LOW_BITS(handle_osd, 30);
 #else
-		if (LOW_BITS(handle_osd, 30) == isp_sub_osd_curr_paddr(chn)) {
-			cmd = LOW_BITS(handle_osd + bytes_osd, 30);
+		if (OSD_DMA_ADDR(handle_osd) == isp_sub_osd_curr_paddr(chn)) {
+			cmd = OSD_DMA_ADDR(handle_osd + bytes_osd);
 		} else {
-			cmd = LOW_BITS(handle_osd, 30);
+			cmd = OSD_DMA_ADDR(handle_osd);
 		}
 #endif
 		isp->reg_blkaddr4[R4_SUB_OSD] = cmd;
@@ -4571,11 +4572,8 @@ int ak_isp_set_isp_capturing(int resume)
 		}
 
 		/*2.check if under-working*/
-		if (cnt > 0)
-			isp->cb.cb_printk("[%s:%d] isp not under-working\n", 
-					__func__, __LINE__);
-		else
-			isp->cb.cb_printk("[%s:%d] warning: isp under-working\n", 
+		if (cnt <= 0)
+			isp->cb.cb_printk("[%s:%d] warning: isp under-working\n",
 					__func__, __LINE__);
 
 		/*3.set isp enable bit*/
@@ -4594,11 +4592,8 @@ int ak_isp_set_isp_capturing(int resume)
 			isp->cb.cb_msleep(1); //
 		}
 
-		if (cnt > 0)
-			isp->cb.cb_printk("[%s:%d] isp pause in irq\n", 
-					__func__, __LINE__);
-		else
-			isp->cb.cb_printk("[%s:%d] warning: request irq set isp pause fail\n", 
+		if (cnt <= 0)
+			isp->cb.cb_printk("[%s:%d] warning: request irq set isp pause fail\n",
 					__func__, __LINE__);
 
 		/*3.if none irq coming, pause now*/
@@ -4617,11 +4612,8 @@ int ak_isp_set_isp_capturing(int resume)
 			isp->cb.cb_msleep(1);
 		}
 
-		if (cnt > 0)
-			isp->cb.cb_printk("[%s:%d] isp not under working now\n", 
-					__func__, __LINE__);
-		else
-			isp->cb.cb_printk("[%s:%d] warning: isp under working\n", 
+		if (cnt <= 0)
+			isp->cb.cb_printk("[%s:%d] warning: isp under working\n",
 					__func__, __LINE__);
 
 		/*5.clear global flag*/
@@ -4634,15 +4626,15 @@ int ak_isp_set_isp_capturing(int resume)
 /***************************************************************************/
 int  isp2_module_init(AK_ISP_FUNC_CB *cb, AK_ISP_SENSOR_CB *sensor_cb, void *reg_base)
 {
-    if (!cb || !cb->cb_malloc || !cb->cb_printk || !sensor_cb)
-        return -1;
-        
+    if (!cb || !cb->cb_malloc || !cb->cb_free || !cb->cb_printk || !sensor_cb)
+        return -EINVAL;
+
     isp = cb->cb_malloc(sizeof(AK_ISP_STRUCT));
     if (!isp) {
         cb->cb_printk("Failed to allocate memory for AK_ISP_STRUCT\n");
-        return -1;
-    }    
-    
+        return -ENOMEM;
+    }
+
     cb->cb_memcpy(&(isp->cb), cb, sizeof(AK_ISP_FUNC_CB));
     cb->cb_memcpy(&(isp->sensor_cb), sensor_cb, sizeof(AK_ISP_SENSOR_CB));
 
@@ -4653,7 +4645,9 @@ int  isp2_module_init(AK_ISP_FUNC_CB *cb, AK_ISP_SENSOR_CB *sensor_cb, void *reg
     isp->area = cb->cb_dmamalloc(isp->bytes, &(isp->handle));
     if (!isp->area) {
         printk("Failed to allocate memory for register table\n");
-        return -1;
+        cb->cb_free(isp);
+        isp = NULL;
+        return -ENOMEM;
     }
 #if 0
     isp->bytes_main_osd = 0;  
@@ -4683,11 +4677,9 @@ int  isp2_module_init(AK_ISP_FUNC_CB *cb, AK_ISP_SENSOR_CB *sensor_cb, void *reg
 	isp->main_osd_update_flag = 0;
 	isp->sub_osd_update_flag = 0;
 	
-    printk("isp_module_init: %s\n", ISP_DRV_LIB_VER);
+    isp_info("isp_module_init: %s\n", ISP_DRV_LIB_VER);
 	
     memset(isp->area, 0x0, isp->bytes);
-    printk("isp2 module init: isp_struct size=%d, dma_area=0x%p, dma_bytes=%d, io_base=0x%x\n", 
-            sizeof(AK_ISP_STRUCT), isp->area, isp->bytes, reg_base);
 
 	/* REG_BLOCK_1 */
     isp->reg_blkaddr1     = (unsigned long *)isp->area;
@@ -4873,7 +4865,7 @@ int ak_isp_set_td()
 	/*notice 3dnr need update*/
 	isp->linkage_para_update_flag = 1;
 
-	printk("set td ok\n");
+	pr_debug("ak39_isp2: 3dnr reset armed\n");
 	return 0;
 }
 
@@ -4883,7 +4875,7 @@ int ak_isp_reload_td()
 	/*notice 3dnr need update*/
 	isp->linkage_para_update_flag = 1;
 
-	printk("reload td success\n");
+	pr_debug("ak39_isp2: 3dnr reset released\n");
 	return 0;
 }
 

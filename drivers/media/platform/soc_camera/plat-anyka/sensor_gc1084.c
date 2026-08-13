@@ -39,8 +39,23 @@
 #define REG_VTS_HI			0x0d41
 #define REG_VTS_LO			0x0d42
 
+#define REG_AGAIN_M			0x00d1
+#define REG_AGAIN_L			0x00d0
+#define REG_AGAIN_H			0x0dc1
+#define REG_AGAIN_LATCH			0x031d
+#define REG_AGAIN_0155			0x0155
+#define REG_COL_AGAIN_H			0x00b8
+#define REG_COL_AGAIN_L			0x00b9
+#define REG_DGAIN_H			0x00b1
+#define REG_DGAIN_L			0x00b2
+
+#define AGAIN_LATCH_OPEN		0x2e
+#define AGAIN_LATCH_CLOSE		0x28
+
 /* Frame length at 30fps, from the sensor init table: 0x0d41/42 = 0x02ee. */
 #define SENSOR_VTS_30FPS		750
+/* 0x0d03/04 is 14 bits wide. */
+#define SENSOR_EXP_MAX			0x3fff
 
 static int g_fps = MAX_FPS;
 static int to_fps;
@@ -128,8 +143,8 @@ static int gc1084_init(const AK_ISP_SENSOR_INIT_PARA *para)
  * Analogue gain.
  *
  * gainLevelTable is Q6 fixed point, 64 == 1.0x, 25 steps from 1.0x to 64.0x.
- * Each step writes six registers; the column order below is the order
- * gc1084_setgain() writes them in.
+ * A step selects the six analogue registers below; the remainder between the
+ * step and the requested gain is applied as sensor digital gain in 0x00b1/b2.
  *
  * Both tables are reproduced from the vendor module's .data (gainLevelTable at
  * +0x58, regValTable at +0xc0); the values were re-derived from the binary
@@ -163,55 +178,61 @@ static const struct gc1084_again_regs gc1084_again_tbl[GC1084_AGAIN_STEPS] = {
 	{0x20, 0x06, 0x01, 0xe0, 0x3f, 0x3f},
 };
 
-static int gc1084_setgain(int step)
+static int gc1084_setgain(unsigned int gain_q6)
 {
 	const struct gc1084_again_regs *r;
+	unsigned int pregain;
+	int i;
 
-	if (step < 0)
-		step = 0;
-	else if (step >= GC1084_AGAIN_STEPS)
-		step = GC1084_AGAIN_STEPS - 1;
+	if (gain_q6 < gc1084_gain_level[0])
+		gain_q6 = gc1084_gain_level[0];
 
-	r = &gc1084_again_tbl[step];
+	/* Highest step whose gain does not exceed the request. */
+	for (i = GC1084_AGAIN_STEPS - 1; i > 0; i--)
+		if (gc1084_gain_level[i] <= gain_q6)
+			break;
 
-	gc1084_sensor_write_register(0x00d1, r->r00d1);
-	gc1084_sensor_write_register(0x00d0, r->r00d0);
-	gc1084_sensor_write_register(0x0dc1, r->r0dc1);
-	gc1084_sensor_write_register(0x0155, r->r0155);
-	gc1084_sensor_write_register(0x00b8, r->r00b8);
-	gc1084_sensor_write_register(0x00b9, r->r00b9);
+	r = &gc1084_again_tbl[i];
+
+	gc1084_sensor_write_register(REG_AGAIN_M, r->r00d1);
+	gc1084_sensor_write_register(REG_AGAIN_L, r->r00d0);
+	gc1084_sensor_write_register(REG_AGAIN_LATCH, AGAIN_LATCH_OPEN);
+	gc1084_sensor_write_register(REG_AGAIN_H, r->r0dc1);
+	gc1084_sensor_write_register(REG_AGAIN_LATCH, AGAIN_LATCH_CLOSE);
+	gc1084_sensor_write_register(REG_AGAIN_0155, r->r0155);
+	gc1084_sensor_write_register(REG_COL_AGAIN_H, r->r00b8);
+	gc1084_sensor_write_register(REG_COL_AGAIN_L, r->r00b9);
+
+	pregain = (gain_q6 << 6) / gc1084_gain_level[i];
+	gc1084_sensor_write_register(REG_DGAIN_H, pregain >> 6);
+	gc1084_sensor_write_register(REG_DGAIN_L, (pregain << 2) & 0xfc);
 
 	return 0;
 }
 
+/* The ISP runs analogue gain in Q8 (ONE_X_GAIN 0x100); the ladder is Q6. */
 static int gc1084_cmos_updata_a_gain(const unsigned int a_gain)
 {
-	int i;
-
-	/* Highest step whose gain does not exceed the request. */
-	for (i = GC1084_AGAIN_STEPS - 1; i > 0; i--)
-		if (gc1084_gain_level[i] <= a_gain)
-			break;
-
-	return gc1084_setgain(i);
+	return gc1084_setgain((a_gain & 0x3ffff) >> 2);
 }
 
 static int gc1084_cmos_updata_d_gain(const unsigned int d_gain)
 {
-	/* The ISP applies digital gain itself; the sensor has no register for
-	 * it in the vendor driver either. */
 	return 0;
 }
 
+/* Returns the number of frames the ISP must wait before the value is live. */
 static int gc1084_cmos_updata_exp_time(unsigned int exp_time)
 {
 	if (exp_time < 1)
 		exp_time = 1;
+	else if (exp_time > SENSOR_EXP_MAX)
+		exp_time = SENSOR_EXP_MAX;
 
-	gc1084_sensor_write_register(REG_EXP_HI, (exp_time >> 8) & 0x3f);
 	gc1084_sensor_write_register(REG_EXP_LO, exp_time & 0xff);
+	gc1084_sensor_write_register(REG_EXP_HI, (exp_time >> 8) & 0xff);
 
-	return 0;
+	return 1;
 }
 
 /*
@@ -330,21 +351,26 @@ static int gc1084_set_power_on(const int pwdn_pin, const int reset_pin)
 	ak_sensor_set_pin_as_gpio(pwdn_pin);
 	ak_sensor_set_pin_dir(pwdn_pin, 1);
 	ak_sensor_set_pin_level(pwdn_pin, !SENSOR_PWDN_LEVEL);
+	ak_sensor_mdelay(10);
 
 	ak_sensor_set_pin_as_gpio(reset_pin);
 	ak_sensor_set_pin_dir(reset_pin, 1);
 	ak_sensor_set_pin_level(reset_pin, SENSOR_RESET_LEVEL);
 	ak_sensor_mdelay(10);
 	ak_sensor_set_pin_level(reset_pin, !SENSOR_RESET_LEVEL);
-	ak_sensor_mdelay(10);
+	ak_sensor_mdelay(20);
 
 	return 0;
 }
 
 static int gc1084_set_power_off(const int pwdn_pin, const int reset_pin)
 {
+	/*
+	 * Reset is left deasserted on purpose: pin_avdd and pin_power are
+	 * AKSENSOR_INVALID_GPIO, so asserting it gates no rail, and
+	 * gc1084_set_power_on() pulses reset before the part is used again.
+	 */
 	ak_sensor_set_pin_level(pwdn_pin, SENSOR_PWDN_LEVEL);
-	ak_sensor_set_pin_level(reset_pin, SENSOR_RESET_LEVEL);
 
 	return 0;
 }
