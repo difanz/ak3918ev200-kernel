@@ -1634,10 +1634,6 @@ static int ak_mount_partitions(struct spi_device *spi)
 		goto out;
 	}
 
-	for (i = 0; i < nr; i++)
-		printk("ak-spiflash: %-6s 0x%08llx + 0x%08llx\n",
-		       parts[i].name, parts[i].offset, parts[i].size);
-
 	memset(&ppdata, 0, sizeof(ppdata));
 	ppdata.of_node = spi->dev.of_node;
 	ret = mtd_device_parse_register(mtd, NULL, &ppdata, parts, nr);
@@ -1745,7 +1741,6 @@ static int ak_spiflash_probe(struct spi_device *spi)
 	struct flash_info		*info;
 	unsigned			i, ret = 0;
 
-	printk("ak spiflash probe enter.\n");
 	/* Platform data helps sort out which chip type we have, as
 	 * well as how this board partitions it.  If we don't have
 	 * a chip ID, try the JEDEC id commands; they'll work for most
@@ -1838,7 +1833,6 @@ static int ak_spiflash_probe(struct spi_device *spi)
 	flash->mtd._erase = ak_spiflash_erase;
 	flash->mtd._read = ak_spiflash_read;
 	flash->mtd.get_device_id = ak_spiflash_get_devid;
-	printk("%s, info->sector_size = %d, info->n_sectors = %d\n", info->name, info->sector_size, info->n_sectors);
 	//printk("flash->mtd.size = %x, %ld\n", flash->mtd.size, flash->mtd.size);
 
 	/* sst flash chips use AAI word program */
@@ -1898,8 +1892,6 @@ static int ak_spiflash_probe(struct spi_device *spi)
 	ret = ak_mount_partitions(spi);
 	if (ret)
 		printk("Add MTD partitions failed\n");
-
-    printk("Init AK SPI Flash finish.\n");
 
 	return 0;
 }
@@ -1962,7 +1954,6 @@ static struct spi_driver ak_spiflash_driver = {
 */
 static int __init ak_spiflash_init(void)
 {
-    printk("Start to init Anyka SPI Flash...\n");
 	return spi_register_driver(&ak_spiflash_driver);
 }
 

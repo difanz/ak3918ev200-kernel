@@ -709,7 +709,7 @@ static int ak39_i2c_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "clock source %p\n", i2c->clk);
 
-	clk_enable(i2c->clk);
+	clk_prepare_enable(i2c->clk);
 
 	/* map the registers */
 
@@ -801,7 +801,7 @@ static int ak39_i2c_probe(struct platform_device *pdev)
 	kfree(i2c->ioarea);
 
  err_clk:
-	clk_disable(i2c->clk);
+	clk_disable_unprepare(i2c->clk);
 	clk_put(i2c->clk);
 
  err_noclk:
@@ -823,7 +823,7 @@ static int ak39_i2c_remove(struct platform_device *pdev)
 	i2c_del_adapter(&i2c->adap);
 	free_irq(i2c->irq, i2c);
 
-	clk_disable(i2c->clk);
+	clk_disable_unprepare(i2c->clk);
 	clk_put(i2c->clk);
 
 	iounmap(i2c->regs);
@@ -845,7 +845,7 @@ static int ak39_i2c_suspend_noirq(struct device *dev)
 	down(&xfer_sem);
 	i2c->suspended = 1;
 
-	clk_disable(i2c->clk);
+	clk_disable_unprepare(i2c->clk);
 	clk_put(i2c->clk);
 
 	return 0;
@@ -857,7 +857,7 @@ static int ak39_i2c_resume(struct device *dev)
 	struct ak39_i2c *i2c = platform_get_drvdata(pdev);
 
 	i2c->suspended = 0;
-	clk_enable(i2c->clk);
+	clk_prepare_enable(i2c->clk);
 	ak39_i2c_init(i2c);
 	up(&xfer_sem);
 	return 0;

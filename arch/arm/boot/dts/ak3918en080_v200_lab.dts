@@ -1,0 +1,10 @@
+/*
+ * Cloud39EV2 with the laboratory-only peripherals enabled. Product images
+ * build ak3918en080_v200.dtb and leave the encrypt block disabled.
+ */
+
+#include "ak3918en080_v200.dts"
+
+&encrypt {
+	status = "okay";
+};

@@ -316,7 +316,6 @@ static int parse_and_map_all_timers(struct device_node *node)
 static void __init ak_timer_init(struct device_node *node)
 {
 	int irq;
-    pr_err("ak_timer_init\n");
 
 	if (parse_and_map_all_timers(node))
 		panic("Can't parse&map all timers");

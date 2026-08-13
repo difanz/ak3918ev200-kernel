@@ -357,7 +357,7 @@ static unsigned long ak_fixed_clk_recalc_rate(struct clk_hw *hw, unsigned long p
 	switch(fixed_clk->id) {
 		case 0:	//JCLK
 			fixed_clk->fixed_rate = ak_get_cpu_pll_clk(fixed_clk->reg) >> div_j;
-			pr_err("CPU(JCLK): %lu(Mhz) \n", fixed_clk->fixed_rate/MHz);
+			pr_info("CPU(JCLK): %lu(Mhz) \n", fixed_clk->fixed_rate/MHz);
 			break;
 		case 1: //HCLK/DCLK
 			fixed_clk->fixed_rate = ak_get_cpu_pll_clk(fixed_clk->reg) >> div_d;
@@ -365,7 +365,7 @@ static unsigned long ak_fixed_clk_recalc_rate(struct clk_hw *hw, unsigned long p
 			break;
 		case 2: //DPHY
 			fixed_clk->fixed_rate = ak_get_cpu_pll_clk(fixed_clk->reg) >> div_phy;
-			pr_err("MEMDDR2(DPHY): %lu(Mhz) \n", fixed_clk->fixed_rate/MHz);
+			pr_info("MEMDDR2(DPHY): %lu(Mhz) \n", fixed_clk->fixed_rate/MHz);
 			break;
 		case 3: //CORE_PLL set in init func, just return
 			fixed_clk->fixed_rate = ak_get_core_pll_clk(fixed_clk->reg);
@@ -1312,7 +1312,7 @@ void core_pll_init(void __iomem *reg, u32 core_pll, u32 div_od, u32 div_n)
 	__raw_writel(regval, reg + CLOCK_CPU_PLL_CTRL);
 
 
-	pr_err("VCLK: %lu(Mhz)\n",ak_get_vclk(reg)/MHz);
+	pr_info("VCLK: %lu(Mhz)\n",ak_get_vclk(reg)/MHz);
 
 }
 

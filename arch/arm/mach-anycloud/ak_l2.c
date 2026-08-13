@@ -24,6 +24,7 @@
 #include <linux/err.h>
 #include <linux/stddef.h>
 #include <linux/irq.h>
+#include <linux/ratelimit.h>
 #include <linux/sched.h>
  
 #include <asm/dma.h>
@@ -95,8 +96,10 @@ static l2_device_info_t l2_device_info[] = {
 	{ ADDR_MMC1,		BUF_NULL },
 #if defined(CONFIG_MACH_AK37D)
 	{ ADDR_MMC2,		BUF_NULL },
-#elif defined(CONFIG_MACH_AK39EV330)
+#elif defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 	{ ADDR_RESERVED1,	BUF_NULL },
+#else
+#error "ak_l2: no L2 device table layout for this machine"
 #endif
 	{ ADDR_SPI0_RX,		BUF_NULL },
 	{ ADDR_SPI0_TX,		BUF_NULL },
@@ -122,7 +125,7 @@ static void l2_frac_dma(unsigned long ram_addr, u8 id, u8 frac_offset,
 	unsigned int bytes, l2_dma_transfer_direction_t direction, bool intr_enable);
 static void l2_get_addr(u8 id, void __iomem ** bufaddr);
 static bool l2_get_dma_param(unsigned int bytes, unsigned int *low, unsigned int *high);
-static void l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
+static int l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
 		l2_dma_transfer_direction_t direction, bool intr_enable);
 static bool l2_wait_dma_finish(u8 id);
 static void l2_cpu(unsigned long ram_addr, u8 id,
@@ -478,7 +481,7 @@ static bool l2_get_dma_param(unsigned int bytes, unsigned int *low, unsigned int
  *  @direction:		Data transfer direction between L2 memory and external RAM 
  *  @intr_enable:	Open interrupt for this L2 buffer or not
  */
-static void l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
+static int l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
 	l2_dma_transfer_direction_t direction, bool intr_enable)
 {
 	unsigned long regval;
@@ -491,17 +494,17 @@ static void l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
 
 	if (bytes == 0) {
 		pr_err("l2: no need to start dma transfer: bytes=0.\n");
-		return ;
+		return -EINVAL;
 	}
 
 	if (!l2_get_dma_param(bytes, &cnt_low, &cnt_high)) {
 		pr_err("l2: L2 DMA buffer size error: bytes=%d.\n", bytes);
-		return ;
+		return -EINVAL;
 	}
 	
 	if (l2_dma_info[id].dma_start || l2_dma_info[id].dma_frac_start) {
 		pr_err("l2: unable to start dma, dma NOT finished, buf id=%d.\n", (int)id);
-		return ;
+		return -EBUSY;
 	}
 
 	l2_dma_info[id].dma_op_times = bytes / DMA_ONE_SHOT_LEN;
@@ -529,7 +532,7 @@ static void l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
 		l2_frac_dma((unsigned long)l2_dma_info[id].dma_frac_addr, id,
 			l2_dma_info[id].dma_frac_offset, l2_dma_info[id].dma_frac_data_len,
 			l2_dma_info[id].direction, intr_enable);
-		return ;
+		return 0;
 	}
 	l2_dma_info[id].dma_start = true;
 
@@ -591,6 +594,8 @@ static void l2_dma(unsigned long ram_addr, u8 id, unsigned int bytes,
 	}
 
 	local_irq_restore(flags);
+
+	return 0;
 }
 
 /**
@@ -917,8 +922,10 @@ static u8 __l2_alloc(l2_device_t device, bool need_wait)
 	bool l2_allocated = false;
 #if defined(CONFIG_MACH_AK37D)
 	if (unlikely(device == ADDR_RESERVED0))
-#elif defined(CONFIG_MACH_AK39EV330)
+#elif defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 	if (unlikely((device == ADDR_RESERVED0) || (device == ADDR_RESERVED1) || (device == ADDR_RESERVED2)))
+#else
+#error "ak_l2: no L2 reserved-device list for this machine"
 #endif
 	{
 		pr_err("l2: unable to allocate l2 buffer for reserved device.\n");
@@ -1102,14 +1109,14 @@ EXPORT_SYMBOL(l2_set_dma_callback);
  *  @direction:		Data transfer direction between L2 memory and external RAM 
  *  @intr_enable:	Open interrupt for this L2 buffer or not
  */
-void l2_combuf_dma(unsigned long ram_addr, u8 id, unsigned int bytes, l2_dma_transfer_direction_t direction, bool intr_enable)
+int l2_combuf_dma(unsigned long ram_addr, u8 id, unsigned int bytes, l2_dma_transfer_direction_t direction, bool intr_enable)
 {
 	if (unlikely(id >= L2_COMMON_BUFFER_NUM)) {
 		pr_err("l2: begin common buffer dma, error buf id=[%d].\n", id);
-		return ;
+		return -EINVAL;
 	}
 
-	l2_dma(ram_addr, id, bytes, direction, intr_enable);
+	return l2_dma(ram_addr, id, bytes, direction, intr_enable);
 }
 EXPORT_SYMBOL(l2_combuf_dma);
 
@@ -1146,12 +1153,13 @@ EXPORT_SYMBOL(l2_combuf_wait_dma_finish);
  *            As to 64Bytes * n size data, L2 could check Buffer Status Status Counter to confirm that
  *            Data has been transfer from peripheral to L2 buffer, so no hardware signals checking needed.
  */
-void l2_combuf_cpu(unsigned long ram_addr, u8 id,
+int l2_combuf_cpu(unsigned long ram_addr, u8 id,
 	unsigned int bytes, l2_dma_transfer_direction_t direction)
 {
 	int i;
 	int loop;
 	int remain;
+	unsigned int timeout;
 
 	loop = bytes / L2_BUF_STATUS_MULTIPLY_RATIO;
 	remain = bytes % L2_BUF_STATUS_MULTIPLY_RATIO;
@@ -1159,16 +1167,28 @@ void l2_combuf_cpu(unsigned long ram_addr, u8 id,
 	switch (direction) {
 	case MEM2BUF:
 		for (i = 0; i < loop; i++) {
-			
-			while (l2_get_status(id) == (L2_BUFFER_SIZE / L2_BUF_STATUS_MULTIPLY_RATIO))
-				;	/* Waiting for L2 buffer to NOT full(means writable) */
-			
+
+			timeout = L2_MAX_CPU_WAIT_TIME;
+			while (l2_get_status(id) == (L2_BUFFER_SIZE / L2_BUF_STATUS_MULTIPLY_RATIO)) {
+				/* Waiting for L2 buffer to NOT full(means writable) */
+				if (--timeout == 0) {
+					printk_ratelimited("l2: cpu write wait timeout, buf id=%d.\n", id);
+					return -ETIMEDOUT;
+				}
+			}
+
 			l2_cpu(ram_addr + i * L2_BUF_STATUS_MULTIPLY_RATIO, id,
 				(i % 8) * L2_BUF_STATUS_MULTIPLY_RATIO, L2_BUF_STATUS_MULTIPLY_RATIO, direction);
 		}
 		if (remain > 0) {
-			while (l2_get_status(id) > 0)
-				;	/* Waiting for L2 buffer to empty */
+			timeout = L2_MAX_CPU_WAIT_TIME;
+			while (l2_get_status(id) > 0) {
+				/* Waiting for L2 buffer to empty */
+				if (--timeout == 0) {
+					printk_ratelimited("l2: cpu drain wait timeout, buf id=%d.\n", id);
+					return -ETIMEDOUT;
+				}
+			}
 
 			l2_cpu(ram_addr + loop * L2_BUF_STATUS_MULTIPLY_RATIO, id,
 				(loop % 8) * L2_BUF_STATUS_MULTIPLY_RATIO, remain, direction);
@@ -1176,12 +1196,18 @@ void l2_combuf_cpu(unsigned long ram_addr, u8 id,
 		break;
 	case BUF2MEM:
 		for (i = 0; i < loop; i++) {
-			while (l2_get_status(id) == 0)
-				;	/* Waiting for L2 buffer to be not empty (means readable) */
-			
+			timeout = L2_MAX_CPU_WAIT_TIME;
+			while (l2_get_status(id) == 0) {
+				/* Waiting for L2 buffer to be not empty (means readable) */
+				if (--timeout == 0) {
+					printk_ratelimited("l2: cpu read wait timeout, buf id=%d.\n", id);
+					return -ETIMEDOUT;
+				}
+			}
+
 			l2_cpu(ram_addr + i * L2_BUF_STATUS_MULTIPLY_RATIO, id,
 				(i % 8) * L2_BUF_STATUS_MULTIPLY_RATIO, L2_BUF_STATUS_MULTIPLY_RATIO, direction);
-			
+
 		}
 		if (remain > 0) {
 			l2_cpu(ram_addr + loop * L2_BUF_STATUS_MULTIPLY_RATIO, id,
@@ -1189,8 +1215,10 @@ void l2_combuf_cpu(unsigned long ram_addr, u8 id,
 		}
 		break;
 	default:
-		BUG();
+		return -EINVAL;
 	}
+
+	return 0;
 }
 EXPORT_SYMBOL(l2_combuf_cpu);
 

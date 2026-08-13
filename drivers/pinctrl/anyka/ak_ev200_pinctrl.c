@@ -1792,8 +1792,6 @@ static int ak_pinctrl_probe(struct platform_device *pdev)
 
 	BUILD_BUG_ON(ARRAY_SIZE(ak_gpio_pins) != AK37D_NUM_GPIOS);
 
-	dev_err(dev, "%s %d\n",__func__,__LINE__);
-
 	pc = devm_kzalloc(dev, sizeof(*pc), GFP_KERNEL);
 	if (!pc)
 		return -ENOMEM;
@@ -1846,7 +1844,6 @@ static int ak_pinctrl_probe(struct platform_device *pdev)
 		ret = pc->irq;
 		goto clk_err;
 	}
-	pr_err("ak_pinctrl_probe irq: %d\n", pc->irq);
 
 	pc->irq_domain = irq_domain_add_linear(np, AK37D_NUM_GPIOS,
 			&irq_domain_simple_ops, pc);

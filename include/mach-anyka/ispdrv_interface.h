@@ -79,4 +79,6 @@ int ispdrv_reload_td(void);
 int ispdrv_get_yuvaddr_and_mdinfo(int id, void **yuv, void **mdinfo);
 int ispdrv_vo_get_inputdataw(void);
 
+int ispdrv_vp_set_3d_nr_ref_addr(AK_ISP_3D_NR_REF_ATTR *ref);
+
 #endif

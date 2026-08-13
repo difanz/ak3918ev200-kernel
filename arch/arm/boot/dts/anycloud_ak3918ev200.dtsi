@@ -4,12 +4,21 @@
 #define RESERVED_MEMORY_BASE  0x80000000
 #define RESERVED_MEMORY_SIZE  0x1800000
 
+#define ION_HEAP_BASE         RESERVED_MEMORY_BASE
+#define ION_HEAP_SIZE         0xc00000
+
+#define VIDEO_POOL_BASE       (RESERVED_MEMORY_BASE + ION_HEAP_SIZE)
+#define VIDEO_POOL_SIZE       (RESERVED_MEMORY_SIZE - ION_HEAP_SIZE)
+
+#define LINUX_MEMORY_BASE     (RESERVED_MEMORY_BASE + RESERVED_MEMORY_SIZE)
+#define LINUX_MEMORY_SIZE     (0x04000000 - RESERVED_MEMORY_SIZE)
+
 / {
     model = "anyka,ak3918ev200";
     compatible = "anyka,ak3918ev200";
 
 	chosen {
-		bootargs = "console=ttySAK0,115200n8 root=/dev/mtdblock5 rootfstype=squashfs init=/sbin/init mem=64M memsize=64M";
+		bootargs = "console=ttySAK0,115200n8 root=/dev/mtdblock4 rootfstype=squashfs init=/sbin/akcam-preinit akcam.jffs=/dev/mtdblock5 mem=64M memsize=64M";
 	};
 
 	cpus {
@@ -32,7 +41,7 @@
 
     memory {
 	    device_type = "memory";
-	    reg = <0x80000000 0x04000000>;
+	    reg = <LINUX_MEMORY_BASE LINUX_MEMORY_SIZE>;
 	};
 
     reserved-memory {
@@ -41,8 +50,17 @@
         ranges;
 
         dma_reserved: dma_reserved@RESERVED_MEMORY_BASE {
-            size = <RESERVED_MEMORY_SIZE>;
-            reg = <RESERVED_MEMORY_BASE RESERVED_MEMORY_SIZE>;
+            size = <ION_HEAP_SIZE>;
+            reg = <ION_HEAP_BASE ION_HEAP_SIZE>;
+            no-map;
+            status = "okay";
+        };
+
+        video_pool: video_pool@80c00000 {
+            compatible = "shared-dma-pool";
+            size = <VIDEO_POOL_SIZE>;
+            reg = <VIDEO_POOL_BASE VIDEO_POOL_SIZE>;
+            no-map;
             status = "okay";
         };
     };
@@ -59,8 +77,8 @@
             compatible = "anyka,dma-reserve";
             ion-id = <1>;
             ion-type = <1>;
-            base-address = <RESERVED_MEMORY_BASE>;
-            size = <RESERVED_MEMORY_SIZE>;
+            base-address = <ION_HEAP_BASE>;
+            size = <ION_HEAP_SIZE>;
             align = <0x4>;
             status = "okay";
         };

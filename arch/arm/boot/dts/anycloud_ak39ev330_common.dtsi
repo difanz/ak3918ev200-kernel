@@ -122,6 +122,14 @@
             status = "disable";
         };
 
+        venc: video-encoder-m2m@20020000 {
+            compatible = "anyka,ak3918ev200-venc";
+            reg = <0x20020000 0x1000>;
+            interrupts = <2 0>;
+            clocks = <&gclk_asic 18>;
+            status = "disable";
+        };
+
 		mmc0: mmc0@20100000 {
             compatible = "anyka,ak39ev330-mmc0";
             reg = <0x20100000 0x7fff>;

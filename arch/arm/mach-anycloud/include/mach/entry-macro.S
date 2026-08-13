@@ -46,7 +46,8 @@
 		movne	\irqnr, #IRQ_CAMERA
 		bne	1001f
 
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || \
+	defined(CONFIG_MACH_AK3918EV200)
 		tst	\irqstat, #(1<<IRQ_VIDEO_ENCODER)
 		bicne	\irqstat, \irqstat, #(1<<IRQ_VIDEO_ENCODER)
 		movne	\irqnr, #IRQ_VIDEO_ENCODER
@@ -113,7 +114,8 @@
 		movne	\irqnr, #IRQ_TWI0
 		bne	1001f
 
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || \
+	defined(CONFIG_MACH_AK3918EV200)
 		tst	\irqstat, #(1<<IRQ_IRDA)
 		bicne	\irqstat, \irqstat, #(1<<IRQ_IRDA)
 		movne	\irqnr, #IRQ_IRDA
@@ -135,7 +137,8 @@
 		movne	\irqnr, #IRQ_MAC
 		bne	1001f
 
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || \
+	defined(CONFIG_MACH_AK3918EV200)
 		tst	\irqstat, #(1<<IRQ_ENCRYTION)
 		bicne	\irqstat, \irqstat, #(1<<IRQ_ENCRYTION)
 		movne	\irqnr, #IRQ_ENCRYTION
@@ -258,7 +261,8 @@
 		bne	1001f
 #endif
 
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || \
+	defined(CONFIG_MACH_AK3918EV200)
 		tst	\irqstat, #(1<<IRQ_NULL2)
 		bicne	\irqstat, \irqstat, #(1<<IRQ_NULL2)
 		movne	\irqnr, #IRQ_NULL2

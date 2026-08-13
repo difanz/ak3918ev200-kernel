@@ -272,7 +272,8 @@ static inline int wait_for_spi_cnt_to_zero(struct ak_spi *hw, u32 timeout)
 
 static void ak_spi_set_cs(struct ak_spi *hw, int cs, int pol)
 {
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || \
+	defined(CONFIG_MACH_AK3918EV200)
 	BUG_ON(cs >= 1);
 #endif
 #if defined(CONFIG_MACH_AK37E)
@@ -1472,7 +1473,8 @@ static int  ak_spi_probe(struct platform_device *pdev)
 	/* the spi->mode bits understood by this driver: */
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_CS_HIGH | SPI_LSB_FIRST |
 			     SPI_TX_DUAL | SPI_TX_QUAD | SPI_RX_DUAL | SPI_RX_QUAD;
-#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330)
+#if defined(CONFIG_MACH_AK37D) || defined(CONFIG_MACH_AK39EV330) || \
+	defined(CONFIG_MACH_AK3918EV200)
 	master->num_chipselect = 1;
 #endif
 #if defined(CONFIG_MACH_AK37E)

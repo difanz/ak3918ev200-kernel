@@ -90,6 +90,11 @@
 #define L2_MAX_DMA_WAIT_TIME	50 * 1000000UL
 
 /*
+ * Poll limit for the CPU-mode buffer status waits in l2_combuf_cpu().
+ */
+#define L2_MAX_CPU_WAIT_TIME	1000000U
+
+/*
  * ANYKA DMA size in bytes per transfer (Always 64Bytes)
  * L2 DMA transfer follows this definition.
  */
@@ -139,8 +144,10 @@ typedef enum {
 	ADDR_MMC1,				/* MMC1 interface */
 #if defined(CONFIG_MACH_AK37D)
 	ADDR_MMC2,				/* MMC2 interface */
-#elif defined(CONFIG_MACH_AK39EV330)
+#elif defined(CONFIG_MACH_AK39EV330) || defined(CONFIG_MACH_AK3918EV200)
 	ADDR_RESERVED1,
+#else
+#error "ak_l2: no L2 device enumeration for this machine"
 #endif
 	ADDR_SPI0_RX = 7,		/* Rx buffer of SPI0 Controller */
 	ADDR_SPI0_TX,			/* Tx buffer of SPI0 Controller */
@@ -279,7 +286,7 @@ bool l2_set_dma_callback(u8 id, l2_callback_func_t func, unsigned long data);
  *  @direction:		Data transfer direction between L2 memory and external RAM 
  *  @intr_enable:		Open interrupt for this L2 buffer or not
  */
-void l2_combuf_dma(unsigned long ram_addr, u8 id, unsigned int bytes, l2_dma_transfer_direction_t direction, bool intr_enable);
+int l2_combuf_dma(unsigned long ram_addr, u8 id, unsigned int bytes, l2_dma_transfer_direction_t direction, bool intr_enable);
 
 /**
  * l2_combuf_wait_dma_finish - Wait for L2 DMA finish
@@ -306,7 +313,7 @@ bool l2_combuf_wait_dma_finish(u8 id);
  *            As to 64Bytes * n size data, L2 could check Buffer Status Status Counter to confirm that
  *            Data has been transfer from peripheral to L2 buffer, so no hardware signals checking needed.
  */
-void l2_combuf_cpu(unsigned long ram_addr, u8 id, unsigned int bytes, l2_dma_transfer_direction_t direction);
+int l2_combuf_cpu(unsigned long ram_addr, u8 id, unsigned int bytes, l2_dma_transfer_direction_t direction);
 
 /**
  * l2_get_status - Get L2 buffer status

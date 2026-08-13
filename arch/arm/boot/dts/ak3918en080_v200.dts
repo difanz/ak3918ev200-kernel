@@ -23,8 +23,8 @@
 		anyka,pull = <0x00000010>;
 	};
 
-	ircut_pins: ircut_pins {
-		anyka,pins = <41 42>;
+	user_gpio_pins: user_gpio_pins {
+		anyka,pins = <6 24 41 42>;
 		anyka,function = <0>;
 		anyka,pull = <0x00000010>;
 	};
@@ -105,11 +105,10 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	sensor0: camera@0x30 {
+	sensor0: camera@37 {
 		compatible = "anyka,sensor0";
-		reg = <0x30>;
-		reset-gpio = <&gpio 49 1>;
-		pwdn-gpio = <&gpio 0xffff 1>;
+		reg = <0x37>;
+		reset-gpio = <&gpio 0 1>;
 		status = "okay";
 
 		port {
@@ -121,12 +120,7 @@
 };
 
 &ircut {
-	pinctrl-names = "default";
-	pinctrl-0 = <&ircut_pins>;
-
-	ircut-a = "0";
-	ircut-a-day-level = "0";
-	status = "okay";
+	status = "disable";
 };
 
 &gpiokeys {
@@ -146,12 +140,15 @@
 };
 
 &mmc0 {
+	compatible = "anyka,ak3918ev200-mmc0", "anyka,ak39ev330-mmc0";
 	pinctrl-names = "default";
 	pinctrl-0 = <&mci0_pins>;
 
+	/* DAT1's pad is wifi_en on this board, so DAT0 is the whole bus. */
 	bus-width = <1>;
 	max-frequency = <25000000>;
 	non-removable;
+	broken-cd;
 	status = "okay";
 };
 
@@ -189,19 +186,39 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&motor0_pins>;
 	phase-gpios = <&gpio 19 0>, <&gpio 20 0>, <&gpio 10 0>, <&gpio 11 0>;
-	angular-speed = <200>;
-	status = "disable";
+	angular-speed = <50>;
+	status = "okay";
 };
 
 &motor1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&motor1_pins>;
 	phase-gpios = <&gpio 15 0>, <&gpio 14 0>, <&gpio 13 0>, <&gpio 23 0>;
-	angular-speed = <100>;
-	status = "disable";
+	angular-speed = <50>;
+	status = "okay";
+};
+
+/ {
+	user_gpio: user-gpio {
+		compatible = "anyka,user-gpio";
+		pinctrl-names = "default";
+		pinctrl-0 = <&user_gpio_pins>;
+
+		gpio-names = "IR_LED", "wifi_en", "ircut_a", "ircut_b",
+			     "WHITE_LED";
+		gpios = <&gpio 6 0>, <&gpio 34 0>, <&gpio 42 0>,
+			<&gpio 41 0>, <&gpio 24 0>;
+		output-defaults = <1 1 0 0 0>;
+		status = "okay";
+	};
 };
 
 &vencoder {
+	status = "okay";
+};
+
+&venc {
+	memory-region = <&video_pool>;
 	status = "okay";
 };
 
@@ -213,9 +230,10 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&dvp0_8bits_pins>;
 
-	clocks = <&gclk_asic 18>, <&gclk_asic 20>;
-	clock-names = "camera", "sensor";
+	clocks = <&gclk_asic 17>;
+	clock-names = "camera";
 	mclk-mhz = <27>;
+	memory-region = <&video_pool>;
 	status = "okay";
 
 	port {

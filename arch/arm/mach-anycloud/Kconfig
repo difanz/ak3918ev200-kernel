@@ -17,3 +17,11 @@ config MACH_AK3918EV200
 	depends on ARCH_AK
 	help
 	  Support for the AK3918EV200 SoC variant.
+
+config CPU_AK3918EV200
+	bool
+	default y if MACH_AK3918EV200
+	help
+	  Selects the AK3918EV200 variants of the ISP2 register layout, the
+	  ISP attribute structures and the frame-buffer enable sequence.
+	  Set by MACH_AK3918EV200; not user-selectable.

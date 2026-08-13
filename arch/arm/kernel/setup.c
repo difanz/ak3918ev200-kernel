@@ -755,6 +755,7 @@ static int __init early_mem(char *p)
 	u64 size;
 	u64 start;
 	char *endp;
+	int first = 0;
 
 	/*
 	 * If the user specifies memory size, we
@@ -763,6 +764,7 @@ static int __init early_mem(char *p)
 	 */
 	if (usermem == 0) {
 		usermem = 1;
+		first = 1;
 		memblock_remove(memblock_start_of_DRAM(),
 			memblock_end_of_DRAM() - memblock_start_of_DRAM());
 	}
@@ -771,6 +773,12 @@ static int __init early_mem(char *p)
 	size  = memparse(p, &endp);
 	if (*endp == '@')
 		start = memparse(endp + 1, NULL);
+
+#ifdef CONFIG_VIDEO_RESERVED_MEM_SIZE
+	if (first && start == PHYS_OFFSET &&
+	    size > (u64)CONFIG_VIDEO_RESERVED_MEM_SIZE)
+		size -= CONFIG_VIDEO_RESERVED_MEM_SIZE;
+#endif
 
 	arm_add_memory(start, size);
 
