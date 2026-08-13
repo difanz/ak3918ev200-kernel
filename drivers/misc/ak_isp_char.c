@@ -11,6 +11,8 @@
 #include <asm/uaccess.h>
 #include <linux/gfp.h>
 #include <linux/slab.h>
+#include <linux/mm.h>
+#include <linux/vmalloc.h>
 #include <linux/platform_device.h>
 #include <asm/io.h>
 #include <linux/dma-mapping.h>
@@ -1318,7 +1320,7 @@ static int ak_isp_set_user_params_do(AK_ISP_USER_PARAM *param)
 		struct isp_osd_color_table_attr *color_table = (void *)param->data;
 		AK_ISP_OSD_COLOR_TABLE_ATTR *isp_color_table = kzalloc(sizeof(AK_ISP_OSD_COLOR_TABLE_ATTR), GFP_KERNEL);
 		if (!isp_color_table) {
-			printk("kzalloc for isp_color_table failed\n");
+			pr_err("kzalloc for isp_color_table failed\n");
 			ret = -ENOMEM;
 			goto out;
 		}
@@ -1485,7 +1487,6 @@ static int ak_isp_set_user_params_do(AK_ISP_USER_PARAM *param)
 		AK_ISP_OSD_MEM_ATTR *isp_osd_mem = &priv->osd_info[chn].main_osd_irq_dma;
 		AK_ISP_OSD_MEM_ATTR tmp = {0};
 
-		printk("%s %d, set main osd mem attr\n", __func__, __LINE__);
 		/* save old param */
 		memcpy(&tmp, isp_osd_mem, sizeof(AK_ISP_OSD_MEM_ATTR));
 
@@ -1499,17 +1500,13 @@ static int ak_isp_set_user_params_do(AK_ISP_USER_PARAM *param)
 				osd_mem->size);
 		isp_osd_mem->size = osd_mem->size;
 		
-		printk("%s %d chn:%d, paddr:%p size:%d \n",
-				__func__, __LINE__, osd_mem->chn, osd_mem->dma_paddr, osd_mem->size);
-
 		/* set mem addr to isp */
 		ret = ak_isp_vpp_set_main_channel_osd_mem_attr(isp_osd_mem);
 		if (!ret && tmp.dma_vaddr) {
-			printk("%s %d, release old memory\n", __func__, __LINE__);
 			iounmap(tmp.dma_vaddr);
 			
 		} else if (ret) {
-			printk("%s %d, set main failed, just restore mem\n", __func__, __LINE__);
+			pr_err("main channel osd mem attr rejected\n");
 			if (isp_osd_mem->dma_vaddr)
 				iounmap(isp_osd_mem->dma_vaddr);
 			memcpy(isp_osd_mem, &tmp, sizeof(AK_ISP_OSD_MEM_ATTR));
@@ -1536,14 +1533,11 @@ static int ak_isp_set_user_params_do(AK_ISP_USER_PARAM *param)
 				osd_mem->size);
 		isp_osd_mem->size = osd_mem->size;
 		
-		printk("%s %d paddr:%p size:%d \n", __func__, __LINE__,
-				osd_mem->dma_paddr,osd_mem->size);
-
 		ret = ak_isp_vpp_set_sub_channel_osd_mem_attr(isp_osd_mem);
 		if (!ret && tmp.dma_vaddr) {
 			iounmap(tmp.dma_vaddr);			
 		} else if (ret) {
-			printk("%s %d, set sub failed, just restore mem\n", __func__, __LINE__);
+			pr_err("sub channel osd mem attr rejected\n");
 			if (isp_osd_mem->dma_vaddr)
 				iounmap(isp_osd_mem->dma_vaddr);
 			memcpy(isp_osd_mem, &tmp, sizeof(AK_ISP_OSD_MEM_ATTR));
@@ -3431,7 +3425,7 @@ static long akisp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			AK_ISP_SENSOR_CB *sensor_cb;
 
 			if (copy_from_user(&fps,(int *)arg, sizeof(int))) {
-				printk("copy from user for fps failed\n");
+				pr_err("copy from user for fps failed\n");
 				ret = -EFAULT;
 			} else {
 				sensor_cb = ak_sensor_get_sensor_cb();
@@ -3453,7 +3447,7 @@ static long akisp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			if (sensor_cb) {
 				fps = sensor_cb->sensor_get_fps_func();
 				if (copy_to_user((int *)arg, &fps, sizeof(int))) {
-					printk("copy to user for fps failed\n");
+					pr_err("copy to user for fps failed\n");
 					ret = -EFAULT;
 				}
 			} else {
@@ -3466,7 +3460,7 @@ static long akisp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		{
 			int scene = ak_isp_get_scene();
 			if (copy_to_user((int *)arg, &scene, sizeof(int))) {
-				printk("copy to user for scene failed\n");
+				pr_err("copy to user for scene failed\n");
 				ret = -EFAULT;
 			}
 		}
@@ -3476,7 +3470,7 @@ static long akisp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		{
 			int iso = ak_isp_get_iso();
 			if (copy_to_user((int *)arg, &iso, sizeof(int))) {
-				printk("copy to user for iso failed\n");
+				pr_err("copy to user for iso failed\n");
 				ret = -EFAULT;
 			}
 		}
@@ -3497,20 +3491,28 @@ void *dmamalloc(unsigned long bytes, void *handle)
 	void *ptr;
 
 	ptr = dma_alloc_coherent(NULL, bytes, handle, GFP_KERNEL);
-	printk("dma alloc vir:0x%p, phy:0x%x\n", ptr, *(dma_addr_t *)handle);
 
 	return ptr;
 }
 
 void dmafree(void *ptr, unsigned long bytes, unsigned long handle)
 {
-	printk("dma free vir:0x%p, phy:0x%lx, bytes=%ld\n", ptr, handle, bytes);
 	dma_free_coherent(NULL, bytes, ptr, handle);
 }
 
 void *ispmalloc(unsigned long bytes)
 {
-	return kzalloc(bytes, GFP_KERNEL);
+	void *ptr = kzalloc(bytes, GFP_KERNEL | __GFP_NOWARN | __GFP_NORETRY);
+
+	if (!ptr)
+		ptr = vzalloc(bytes);
+
+	return ptr;
+}
+
+void ispfree(void *ptr)
+{
+	kvfree(ptr);
 }
 
 /*
@@ -3542,7 +3544,7 @@ static int akisp_open(struct inode *node, struct file *file)
 	priv->used_cnt++;
 
 	if (priv->base) {
-		printk("isp char device had opend, no need to init more\n");
+		pr_debug("isp already initialised\n");
 		goto fini;
 	}
 
@@ -3550,7 +3552,7 @@ static int akisp_open(struct inode *node, struct file *file)
 	cb.cb_memcpy	= (ISPDRV_CB_MEMCPY)memcpy;
 	cb.cb_memset	= (ISPDRV_CB_MEMSET)memset;
 	cb.cb_malloc	= (ISPDRV_CB_MALLOC)ispmalloc;
-	cb.cb_free		= (ISPDRV_CB_FREE)kfree;
+	cb.cb_free		= (ISPDRV_CB_FREE)ispfree;
 	cb.cb_dmamalloc	= dmamalloc;
 	cb.cb_dmafree	= dmafree;
 	cb.cb_msleep	= (ISPDRV_CB_MSLEEP)msleep;
@@ -3583,6 +3585,7 @@ fail_isp2_init:
 fail_ior4reg:
 	release_mem_region(AKISP_REG_MEM_START, RESOURCE_SIZE);
 fail_req4reg:
+	priv->used_cnt--;
 	mutex_unlock(&priv->lock);
 	return err;
 }
@@ -3620,33 +3623,25 @@ static int akisp_release(struct inode *node, struct file *file)
 
 		/* release osd irq dma memory */
 		isp_osd_mem = &p_osd_info->main_osd_irq_dma;
-		printk("%s %d, release main osd addr: %p\n",
-				__func__, __LINE__, isp_osd_mem->dma_vaddr);
 		if (isp_osd_mem->dma_vaddr) {
-			printk("%s %d, unmap main osd\n", __func__, __LINE__);
 			iounmap(isp_osd_mem->dma_vaddr);
 			isp_osd_mem->dma_vaddr = NULL;
 		}
 
-		printk("%s %d, release main osd res ok\n", __func__, __LINE__);
 
 		isp_osd_mem = &p_osd_info->sub_osd_irq_dma;
-		printk("%s %d, release sub osd addr: %p\n",
-				__func__, __LINE__, isp_osd_mem->dma_vaddr);
 		if (isp_osd_mem->dma_vaddr) {
 			iounmap(isp_osd_mem->dma_vaddr);
 			isp_osd_mem->dma_vaddr = NULL;
 		}
 	}
 	
-	printk("%s %d, release sub osd res ok\n", __func__, __LINE__);
 	
 	iounmap(priv->base);
 	release_mem_region(AKISP_REG_MEM_START, RESOURCE_SIZE);
 
 	priv->base = NULL;
 
-	printk("%s %d, release akisp\n", __func__, __LINE__);
 fini:
 	mutex_unlock(&priv->lock);
 	return 0;
@@ -3669,7 +3664,6 @@ static struct miscdevice akisp_dev = {
 int __init akisp_init(void)
 {
 	int err = 0;
-	printk(KERN_ERR "%s\n", __func__);
 	if (misc_register(&akisp_dev)) {
 		printk(KERN_ERR "akisp: Unable register misc device.\n");
 		err = -ENODEV;
@@ -3678,7 +3672,7 @@ int __init akisp_init(void)
 
 	priv = kzalloc(sizeof(struct akisp_char_pirv), GFP_KERNEL);
 	if (!priv) {
-		printk("%s no mem\n", __func__);
+		pr_err("%s: no mem\n", __func__);
 		err = -ENOMEM;
 		goto fail_mem4isp;
 	}

@@ -538,6 +538,30 @@ source "drivers/misc/genwqe/Kconfig"
 source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
 
+config AK_USER_GPIO
+	bool "Anyka named board GPIO sysfs interface"
+	depends on ARCH_AK && GPIOLIB && OF
+	help
+	  Export the board's named GPIO lines - illumination, IR-cut, Wi-Fi
+	  power, speaker amplifier - as root-writable files under
+	  /sys/user-gpio, using the name table supplied by the device tree.
+	  Boards without an "anyka,user-gpio" node are unaffected.
+
+	  If unsure, say N.
+
+config AK_MOTOR
+	tristate "Anyka 4-phase stepper motor (pan/tilt)"
+	depends on ARCH_AK && GPIOLIB
+	help
+	  Character devices /dev/ak-motor0 and /dev/ak-motor1 that step the
+	  pan and tilt motors described by the "anyka,ak39ev330-motor0" and
+	  "anyka,ak39ev330-motor1" device tree nodes, using the four
+	  phase-gpios each node names. There is no position feedback: the
+	  driver turns by a commanded angle and reports completion, and
+	  knowing where the mechanism is left is userspace's problem.
+
+	  If unsure, say N.
+
 config AK_ISP_CHAR
 	bool "Anyka ISP character device (/dev/isp_char)"
 	depends on ARCH_AK && AK_ISP_CORE && I2C && SOC_CAMERA
