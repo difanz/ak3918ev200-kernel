@@ -2,6 +2,8 @@
 # Makefile for the video capture/playback device drivers.
 #
 
+obj-y += anyka/
+
 obj-$(CONFIG_VIDEO_TIMBERDALE)	+= timblogiw.o
 obj-$(CONFIG_VIDEO_M32R_AR_M64278) += arv.o
 

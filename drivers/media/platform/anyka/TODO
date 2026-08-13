@@ -1,0 +1,280 @@
+ak-venc: what this driver answers, and what it does not
+=======================================================
+
+Stage one - platform resources, clock and reset, the m2m job path, the two
+queues and a fixed-QP IDR - has passed its hardware gate: one IDR byte-for-byte
+identical to the lib/video userspace reference.
+
+Stage two is IPPP with a rate controller: P frames, the GOP, the reference
+rotation, frame_num and idr_pic_id, the frame-level bit budget, the MAD loop,
+the core's checkpoint ladder and the standard control set. None of stage two
+has run on hardware; sections 4 and 5 list what only a board can settle.
+
+Stage three adds JPEG on the CAPTURE queue - section 6. It is additive: no
+H.264 path changed, and a JPEG frame touches none of the H.264 session's
+state.
+
+1. uAPI: the stateful encoder contract
+--------------------------------------
+
+The formal "V4L2 Stateful Video Encoder Interface" postdates this kernel, so
+full conformance to it is not reachable here - V4L2_BUF_FLAG_LAST does not
+exist in include/linux/videodev2.h on 3.4.113 and neither does
+V4L2_CAP_VIDEO_M2M. What follows is the contract as it stands, and what this
+driver does about each item.
+
+Answered:
+
+  VIDIOC_QUERYCAP            VIDEO_CAPTURE | VIDEO_OUTPUT | STREAMING.
+                             No VIDEO_M2M: the flag is not in this tree.
+  VIDIOC_ENUM_FMT            both queues. OUTPUT: YU12 only. CAPTURE: H264
+                             and JPEG.
+  VIDIOC_G_FMT               both queues, valid before any S_FMT
+                             (1280x720 I420 in, H.264 out).
+  VIDIOC_TRY_FMT             both queues. Width is clamped to 1280 and to a
+                             multiple of 16; height is NOT rounded up to 16,
+                             because the core codes ALIGN(height,16) rows and
+                             declares the difference in the bottom-edge
+                             overfill field. 640x360 stays 640x360.
+  VIDIOC_S_FMT               both queues, -EBUSY while the queue has buffers.
+                             S_FMT(OUTPUT) sets the coded size; G_FMT(CAPTURE)
+                             reports it.
+  VIDIOC_REQBUFS             both queues, MMAP and USERPTR.
+  VIDIOC_QUERYBUF            both queues.
+  VIDIOC_QBUF / DQBUF        both queues.
+  VIDIOC_STREAMON / _OFF     both queues.
+  VIDIOC_G_PARM / S_PARM     OUTPUT only, timeperframe. The frame rate is what
+                             the bit budget is denominated in. S_PARM also
+                             turns on the SPS's VUI timing; without it the SPS
+                             is byte-identical to stage one's.
+  VIDIOC_QUERYCTRL           through the per-fh control handler.
+  VIDIOC_G_CTRL / S_CTRL     through the per-fh control handler.
+  VIDIOC_G_EXT_CTRLS /
+    S_EXT_CTRLS / TRY_EXT_CTRLS / QUERYMENU
+                             through the per-fh control handler.
+  poll(), mmap()             v4l2_m2m_poll / v4l2_m2m_mmap.
+
+Not answered - each one is a gap, not a decision that it is unnecessary:
+
+  VIDIOC_ENCODER_CMD         V4L2_ENC_CMD_STOP / _START. The ioctl and the
+  VIDIOC_TRY_ENCODER_CMD     command constants exist on this tree
+                             (include/linux/videodev2.h, include/media/
+                             v4l2-ioctl.h). Draining is stage two: the driver
+                             has no drain state and does not emit an empty
+                             final CAPTURE buffer.
+  VIDIOC_SUBSCRIBE_EVENT     V4L2_EVENT_EOS and V4L2_EVENT_CTRL. Both exist on
+  VIDIOC_UNSUBSCRIBE_EVENT   this tree; without ENCODER_CMD there is nothing
+  VIDIOC_DQEVENT             to signal yet. v4l2_m2m_poll() on this tree does
+                             not report POLLPRI, so event delivery needs a
+                             poll wrapper as well as the three ioctls.
+  VIDIOC_CREATE_BUFS         vb2_create_bufs() exists on this tree; not wired.
+  VIDIOC_PREPARE_BUF         vb2_prepare_buf() exists; not wired.
+  VIDIOC_G_CROP / S_CROP /
+    CROPCAP                  no cropping is offered; the visible rectangle is
+                             the format.
+  VIDIOC_ENUM_FRAMESIZES     a client cannot discover the 16-pixel width step
+    / ENUM_FRAMEINTERVALS    or the 1280 limit without TRY_FMT.
+  V4L2_BUF_FLAG_LAST         absent from this kernel; a modern client keys its
+                             drain on it and will not see one.
+  VIDIOC_EXPBUF,
+    V4L2_MEMORY_DMABUF       absent from this kernel's V4L2 core; USERPTR is
+                             the zero-copy path here. Settled, not a gap to
+                             reopen.
+
+2. Controls
+-----------
+
+Standard, all with both the define and a case in
+drivers/media/video/v4l2-ctrls.c on this tree:
+
+  H264_I_FRAME_QP, H264_P_FRAME_QP, H264_MIN_QP, H264_MAX_QP
+  BITRATE, BITRATE_MODE (VBR/CBR), GOP_SIZE, VBV_SIZE (the CPB, kilobytes)
+  FRAME_RC_ENABLE (default off), MB_RC_ENABLE (default on)
+  H264_PROFILE (Baseline and Constrained Baseline only), H264_LEVEL
+
+Private, at V4L2_CID_USER_BASE + 0x1100, for the tuning with no standard CID:
+
+  +0 H264 Intra QP Delta          the I frame's offset from the P QP
+  +1 H264 I Frame Budget Weight   the GOP budget split
+  +2 MB Rate Control Mode         MAD or Checkpoint - they are alternatives
+  +3 MAD Based QP Adjustment      signed, -8..7
+  +4 MAD Threshold                0..63, the seed of the adaptation loop
+  +5 MAD Threshold Adaptation
+
+Not exposed: the motion-estimation penalties and mode favours. They are a
+function of QP the driver owes the hardware, and a user-settable value would
+break the rate controller quietly. V4L2_CID_MPEG_VIDEO_CYCLIC_INTRA_REFRESH_MB
+stays unexposed too: the recovered register map has no cyclic-refresh field.
+Entropy mode stays unexposed until the CABAC context table generator exists,
+which is why H264_PROFILE offers no Main.
+
+Force-key-frame: V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME does NOT exist in this
+tree, and its upstream number is not in this tree either, so it is neither used
+nor invented. The driver exposes V4L2_CID_MPEG_MFC51_VIDEO_FORCE_FRAME_TYPE,
+which is defined in include/linux/videodev2.h here but has no case in
+v4l2-ctrls.c - so it is registered with v4l2_ctrl_new_custom() and the driver
+supplies the name and the menu. Backporting the standard CID (a define plus one
+case, with the number taken from a current upstream v4l2-controls.h) is the
+right fix and is not done here.
+
+Still missing and still a gap: HEADER_MODE, ENTROPY_MODE, MULTI_SLICE_MODE,
+the loop-filter controls and the JPEG class.
+
+3. Stage-two behaviour that is not the final behaviour
+------------------------------------------------------
+
+- The rate controller runs in the interrupt handler rather than in a threaded
+  handler. It is bounded integer arithmetic with no 64-bit division, so it is
+  affordable there, but the design asks for request_threaded_irq().
+- A control write lands in the context's rate-control config without a lock and
+  is picked up by the next device_run. Each field is word sized, so a write can
+  be missed by one frame but not torn.
+- Deblocking, chroma QP offset and slice size are fixed at the values the first
+  hardware encode used; only QP-dependent registers move per frame.
+- The MAD stage now runs the designed values (-2, threshold 12, adapting)
+  rather than stage one's frozen vendor pair (-3, threshold 8). To reproduce
+  the stage-one bitstream exactly, set MB_RC_ENABLE=1, MB Rate Control Mode to
+  MAD, MAD Based QP Adjustment to -3, MAD Threshold to 8, MAD Threshold
+  Adaptation to 0, FRAME_RC_ENABLE=0, QP 30, and do not call S_PARM.
+  workspace/capture/vencstream.c has a flag for each of those.
+- ak-venc-rc.c is duplicated as lib/video/ak-venc-rc.c in the firmware tree,
+  byte for byte, so that ak-venc-rc_test can run on the host. Task 4 folds the
+  copies together.
+- ak-venc-hw.c, ak-venc-h264.c and ak-venc-regs.h are stage-one copies of
+  lib/video/akcam_h8290.c, akcam_bits.c + akcam_h264_hdr.c and
+  akcam_h8290_fields.h. Task 4 replaces them with the shared sources so the
+  host test that replays the vendor register captures runs against the same
+  code the driver compiles. Until then the two copies can drift.
+- The NAL length table is over-allocated at one 32-bit entry per macroblock row
+  plus sixteen. The exact figure the core needs is not established; a bigger
+  table is harmless, a smaller one corrupts what follows it.
+- Only I420 is enumerated on OUTPUT. The core also takes NV12, YUYV and UYVY,
+  but the capture path delivers I420 and the ISP driver already enumerates an
+  NV12 it does not produce.
+
+4. Open questions this stage cannot settle
+-------------------------------------------
+
+- The frame-store slot swap cadence is inferred from two slots and IPPP; it has
+  never been observed. Ten frames of a static scene decode without drift only
+  if it is right.
+- The core writes its own four-byte start code for the slice NAL, so an inter
+  frame has nothing prepended and the stream base is the buffer itself. That
+  follows from the stage-one encode, where the software header was not followed
+  by a start code and ffmpeg decoded the result; it has not been seen for a
+  frame with no software header at all.
+- Whether a checkpoint fires, where it lands, and the sign convention of the
+  error ladder. Nothing in either vendor capture exercises the stage.
+- Whether MAD_BASED_QP_ADJUSTMENT applies below the threshold, and whether the
+  adaptation loop converges to a third of the picture rather than sitting at a
+  rail.
+- What bitrate the frame-level loop actually achieves.
+- Coexistence with drivers/uio/uio_video_codec.c is not safe, only convenient.
+  Both drivers take interrupt 2 on demand - UIO on its first open, this driver
+  on its first STREAMON - so whichever is first wins and the other fails. But
+  uio_vcodec_open() ignores the return of request_irq() and then calls
+  disable_irq_nosync(2) unconditionally, so opening /dev/uio0 while this driver
+  is streaming silently disables the line this driver is waiting on, and
+  uio_vcodec_release() then free_irq()s a cookie it does not own. Making the
+  two Kconfig entries mutually exclusive, and dropping the UIO device from the
+  board file once this driver is the production path, is the real fix. Note
+  also that probe() pulses the clock and reset to read the ASIC id, so loading
+  this as a module while something else is mid-encode resets the core under it.
+
+- One CPU mapping of the CAPTURE buffer is needed to write SPS and PPS into it.
+  MMAP buffers have a kernel address; USERPTR buffers do not on this tree, so
+  buf_prepare ioremaps them. An ION carveout mapped write-combining in
+  userspace and ioremap_nocache here is a mismatched-attribute alias - both are
+  non-cacheable, but it should be checked once on hardware.
+
+5. What only hardware can settle, in the order to try it
+---------------------------------------------------------
+
+Each item is one run of workspace/capture/vencstream.c against a stored I420
+frame. Keep runs short: capture and encode wedge this board at a rate that
+climbs with run length.
+
+1. Ten frames, fixed QP 30, GOP 10, static input:
+     vencstream in.yuv out.264 -n 10 -g 10 -q 30 -p 30
+   One IDR then nine P frames. The P frames of a static scene should be a small
+   fraction of the IDR. Decode with ffmpeg and check for drift: that is the
+   reference-rotation cadence, and a frozen rotation drifts visibly.
+2. The same run with -k 5, which forces an IDR mid-stream through
+   FORCE_FRAME_TYPE. Two IDRs, no drift across the second.
+3. The stage-one reproduction, which must be byte-identical to the frame the
+   gate produced: -n 1 -q 30 -m 1 -M mad -D -3 -t 8 -a 0, no -b, no -f.
+4. Frame-level rate control: -n 50 -g 25 -b 2000000 -f 25. Check the mean rate
+   is within 5% of the target and that no frame exceeds four times its budget.
+5. The MAD adaptation loop: -m 1 -M mad over a hundred frames, watching that
+   the qualifying fraction moves toward a third rather than sitting at a rail.
+6. The checkpoint stage: -m 1 -M checkpoint. Before trusting it, run the
+   calibration of the rate-control design's section 12.1 - one checkpoint at
+   the halfway macroblock, all seven deltas at +7 - because nothing in either
+   vendor capture exercises this stage.
+7. An error frame: a deliberately small CAPTURE buffer to raise buffer-full,
+   and check the next frame comes back as an IDR and that the stream after it
+   still decodes.
+
+6. JPEG
+-------
+
+V4L2_PIX_FMT_JPEG on the CAPTURE queue, chosen per frame, with
+V4L2_CID_JPEG_COMPRESSION_QUALITY as its only knob. The picture size still
+comes from S_FMT on the OUTPUT queue, as it does for H.264.
+
+What the core does and what software does:
+
+  the core        the entropy-coded scan, and the EOI marker - swreg20 bit 24
+                  is "JPEG slice enable. 0=picture ends with EOI", and slices
+                  are disabled. Software must not append one.
+  software        SOI, APP0, DQT, SOF0, DHT, SOS, written into the head of the
+                  CAPTURE buffer. The core continues from the last whole 64-bit
+                  word of that header, so the finished file is the buffer from
+                  offset zero and nothing is spliced afterwards.
+
+The Huffman tables are not negotiable: the core has no register for them, so
+the entropy coder is wired to the standard baseline tables of T.81 Annex K and
+the DHT has to say so. The quantisation tables ARE registers - swreg64..95,
+four 8-bit entries each, in a load order that is neither raster nor zigzag -
+and they are the only thing quality changes.
+
+Stateless, which is the property the rest of the system depends on:
+
+  - No reference frame, no reconstruction frame, no NAL length table, no CABAC
+    block. ak_venc_alloc_priv() allocates none of them for a JPEG context.
+  - The interrupt handler does not feed the rate controller, rotate the
+    reference stores, advance the GOP or touch frame_num for a JPEG frame, and
+    a failed JPEG does not force the next H.264 frame intra.
+  - The register file is rebuilt from zero for each JPEG frame, so no H.264
+    field survives into it.
+
+So a snapshot costs a running H.264 session one frame of core time and nothing
+else. Two contexts - one H.264, one JPEG - interleave safely, because each
+device_run rewrites swreg1..0x3e in full from its own shadow.
+
+PROVEN before hardware: the field semantics, all of them quoted from the
+vendor's own descriptor table; that JPEG allocates nothing; that the software
+half is correct, because splicing lib/video's header in front of libjpeg's scan
+for the same picture and the same tables decodes pixel-identical to libjpeg's
+own file.
+
+INFERRED and needing the board: that the core accepts a mid-word handover for
+JPEG as it does for H.264 (same three registers, same arithmetic, but only the
+H.264 side has run); that the quantisation load order is what the vendor's
+permutation says it is; that swreg24 reads back in bits for JPEG as it does for
+H.264; that the core does not touch the frame stores in JPEG mode, which is
+what the vendor's zeroed address registers imply.
+
+The gate, in order:
+
+8. One 1280x720 JPEG from a stored I420 frame through openjpg - the userspace
+   proof, which is what settles all four inferences above at once. A host
+   decoder must open it at 1280x720 and the picture must look like the input.
+   Sweep the quality control: 20, 50, 80, 95, and check the file size moves
+   monotonically and every one decodes.
+9. The same frame through this driver at the same quality, byte-compared
+   against openjpg's output. Anything but equality is a difference in the
+   register programming or the header, and the diff says which.
+10. A JPEG frame taken from a second context while an H.264 session is
+    streaming: the H.264 stream either side of it must decode with no drift and
+    no dropped frame, which is what proves the interleave.

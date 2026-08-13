@@ -2,6 +2,13 @@
 # Platform drivers
 #	Most drivers here are currently for webcam support
 
+menu "Anyka platform video devices"
+	depends on VIDEO_DEV && VIDEO_V4L2
+
+source "drivers/media/platform/anyka/Kconfig"
+
+endmenu
+
 menuconfig V4L_PLATFORM_DRIVERS
 	bool "V4L platform devices"
 	depends on MEDIA_CAMERA_SUPPORT

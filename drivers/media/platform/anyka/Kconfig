@@ -1,0 +1,46 @@
+config VIDEO_AK_VENC
+	tristate "Anyka AK3918EV200 H.264 encoder"
+	depends on VIDEO_DEV && VIDEO_V4L2 && ARCH_AK
+	select VIDEOBUF2_DMA_CONTIG
+	select V4L2_MEM2MEM_DEV
+	help
+	  V4L2 mem2mem driver for the Hantro/On2 8290 video encoder in the
+	  AK3918EV200. OUTPUT takes raw I420 frames, CAPTURE produces H.264
+	  or JFIF JPEG.
+
+	  This driver and the UIO codec driver both own the same register
+	  file; run one or the other.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called ak_venc.
+
+config VIDEO_AK_CAM
+	bool "Anyka AK3918EV200 V4L2 capture bridge"
+	depends on VIDEO_DEV && VIDEO_V4L2 && ARCH_AK && AK_ISP_CHAR
+	depends on !VIDEO_AK
+	select VIDEOBUF2_CORE
+	select VIDEOBUF2_DMA_CONTIG
+	help
+	  Plain V4L2 capture driver for the ISP2 video output, replacing the
+	  soc_camera host in drivers/media/platform/soc_camera/plat-anyka/
+	  ak_camera.c. It registers two capture nodes, main and sub channel,
+	  over videobuf2 with MMAP and USERPTR.
+
+	  This driver and VIDEO_AK claim the same device tree node
+	  ("anyka,ak39ev330-isp"); only one can be built.
+
+	  If unsure, say N.
+
+config VIDEO_AK_CAM_SENSOR
+	bool "Anyka sensor subdev for the capture bridge"
+	depends on VIDEO_AK_CAM
+	help
+	  The "aksensor" i2c client as a v4l2_subdev with .s_power and a control
+	  handler, wrapping the AK_ISP_SENSOR_CB registry. It replaces
+	  drivers/media/platform/soc_camera/plat-anyka/ak_sensor.c, which needs
+	  soc_camera.
+
+	  Say N to keep the soc_camera-era sensor glue while the bridge itself
+	  is brought up.
+
+	  If unsure, say N.
