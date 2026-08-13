@@ -32,6 +32,7 @@
 #define AK_MOTOR_DEVNAME	"ak-motor"
 
 #define AK_MOTOR_PHASE_NUM	(4)
+#define AK_MOTOR_SEQ_LEN	(8)
 
 #define MOTOR_TURN_CLKWISE	(0)
 #define MOTOR_TURN_ANTICLKWISE	(1)
@@ -45,9 +46,12 @@
 #define MOTOR_STATUS_STOPING	(2)
 #define MOTOR_STATUS_STOPED	(3)
 
-static const u8 phase_seq[2][AK_MOTOR_PHASE_NUM] = {
-	[MOTOR_TURN_CLKWISE]	 = { 0x03, 0x09, 0x0c, 0x06 },
-	[MOTOR_TURN_ANTICLKWISE] = { 0x03, 0x06, 0x0c, 0x09 },
+/*
+ * Half-step: one coil, then two, around the four phases. Full-stepping this
+ * mechanism does not develop enough torque to turn it - it buzzes in place.
+ */
+static const u8 phase_seq[AK_MOTOR_SEQ_LEN] = {
+	0x01, 0x03, 0x02, 0x06, 0x04, 0x0c, 0x08, 0x09,
 };
 
 struct ak_motor {
@@ -65,6 +69,7 @@ struct ak_motor {
 	unsigned long		delay_jiffies;
 
 	int			dir;
+	u8			index;
 	int			angle;
 	int			total;
 	int			count;
@@ -137,9 +142,11 @@ static void ak_motor_timer_handler(unsigned long data)
 		goto out;
 	}
 
+	ak_motor_phase_write(motor, phase_seq[motor->index]);
+	motor->index = (motor->index +
+			(motor->dir == MOTOR_TURN_CLKWISE ? 1 : AK_MOTOR_SEQ_LEN - 1)) &
+		       (AK_MOTOR_SEQ_LEN - 1);
 	step = motor->total - motor->count;
-	ak_motor_phase_write(motor,
-			     phase_seq[motor->dir][step % AK_MOTOR_PHASE_NUM]);
 
 	motor->remain_angle = motor->angle -
 			      (step * MOTOR_STEP_PERIOD) / 360;
@@ -166,7 +173,7 @@ static int ak_motor_turn(struct ak_motor *motor, int dir, int angle)
 	motor->dir = dir;
 	motor->angle = angle;
 	motor->remain_angle = angle;
-	motor->total = motor_step_count(angle);
+	motor->total = motor_step_count(angle) * 2;
 	motor->count = motor->total;
 	motor->running = MOTOR_STATUS_RUNNING;
 
