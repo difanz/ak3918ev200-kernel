@@ -513,23 +513,12 @@ static void ak39_set_linein_power(struct ak39_codec *codec, bool bOn)
 static void ak39_set_mic_power(struct ak39_codec *codec, bool bOn)
 {
  	unsigned long reg_val = 0;
+	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
 	if(bOn)
-	{
-		reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-		reg_val |= VDD_MIC_SEL;
-		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
-
-		//power on mic interface
-		reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-        reg_val &= ~(0x1 << 23);  //power on differential mic
-        REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
-	}
+		reg_val &= ~PD_MIC;
 	else
-	{
-		reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-        reg_val |= (0x1 << 23);  //power off differential mic
-        REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
-	}
+		reg_val |= PD_MIC;
+	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
 }
 
 static void ak39_set_sel_vref(struct ak39_codec *codec, bool bOn) 

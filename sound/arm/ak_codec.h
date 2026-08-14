@@ -106,14 +106,12 @@
 #define PD_BIAS			(1 << 0)
 
 //ANALOG_CTRL_REG2(0x0080 00A0)
-#define VDD_MIC_SEL		(1 << 25)
+#define PD_MIC			(1 << 21)
 #define PD_S2D			(1 << 27)
 #define ADC_LIM        (1 << 28)
 #define MIC_GAINBST    (1 << 18)
 #define MIC_GAIN_SHIFT 15
 #define MASK_MIC_GAIN  (0x7 << MIC_GAIN_SHIFT)
-#define PD_MICP        (1 << 23)
-#define PD_MICN        (1 << 24)
 #define PD_ADC2          (1 << 26)
 #define ADC_IN_SHIFT     29
 #define MASK_ADC_IN      (0x7 << ADC_IN_SHIFT)
