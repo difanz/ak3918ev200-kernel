@@ -255,16 +255,6 @@ static void set_cur_vcm2_dischg(struct ak39_codec *codec, unsigned long value)
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 }
 
-static void set_cur_vcm2(struct ak39_codec *codec, unsigned long value)
-{
-	int reg_val;
-	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-	reg_val &= ~(0x1F << 16);
-	reg_val |= (value << 16);
-	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
-}
-
-
 /**
  * @brief  select HP in signal
  * @author 
@@ -457,7 +447,6 @@ void ak39_set_hp_power(struct ak39_codec *codec, bool bOn, bool soft_de_pipa)
 		ak39_set_vcm_ref_power(codec, 1);
 		
 		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~MASK_DIS_CHG_VCM2;
-		set_cur_vcm2(codec, 0x1e);
 		mdelay(100);
 		
 		set_bit_depipa_noise_ctrl(codec, DEPIPA_NOISE_NOT_USE);
