@@ -163,7 +163,7 @@ static struct ak39_volume_info vol_info[MIXER_PORT_VOL_COUNT] = {
 
 static int default_route[MIXER_DST_COUNT] = {
 	[MIXER_ADDR_DST_HP] = SOURCE_DAC,
-   	[MIXER_ADDR_DST_ADC2] = SOURCE_MIC,	
+   	[MIXER_ADDR_DST_ADC2] = SOURCE_LINEIN,
 };
 
 extern unsigned long playback_statu;
