@@ -83,20 +83,27 @@
 #define SEL_VREF 		(1<< 23)
 
 //ANALOG_CTRL_REG1(0x0080 009c)
+#define MASK_DISCHG_HP		(0x7 << 29)
+#define DISCHG_HP(val)		(((val)&0x7) << 29)
+#define MASK_PD_HP_CTRL		(0xF << 25)
+#define PD_HP_CTRL(val)		(((val)&0xF) << 25)
 #define PD2_HP         	(1 << 24)
-#define VCM3_SEL		(1 << 23)
+#define PD1_HP         	(1 << 23)
 #define MASK_HP_GAIN	(0x1F << 18)
 #define HP_GAIN(val)	(((val)&0x1F)<<18)
-#define PRE_EN1        (1 << 17)
-#define PRE_EN2        (1 << 16)
-#define PD1_HP         (1 << 15)
-#define RST_DAC        (1 << 11)
-#define PD_OP          (1 << 10)
-#define PD_CK          (1 << 9)
-#define PD_VCM3        (1 << 3)
-#define PL_VCM2        (1 << 2)  //pull down to ground.
-#define PD_VCM2        (1 << 1)  // power off
-#define PD_REF			(1 << 0)
+#define PRE_EN         (1 << 17)
+#define HP_IN_SHIFT    14
+#define MASK_HP_IN     (0x7 << HP_IN_SHIFT)
+#define RST_DAC        (1 << 13)
+#define PD_OP          (1 << 12)
+#define PD_CK          (1 << 11)
+#define MASK_DIS_CHG_VCM2	(0x1F << 6)
+#define DIS_CHG_VCM2(val)	(((val)&0x1F) << 6)
+#define EN_VP2V5       (1 << 5)
+#define PON_VP         (1 << 4)
+#define PL_VCM3        (1 << 2)  //pull down to ground.
+#define PD_VCM3        (1 << 1)  // power off
+#define PD_BIAS			(1 << 0)
 
 //ANALOG_CTRL_REG2(0x0080 00A0)
 #define VDD_MIC_SEL		(1 << 25)
@@ -105,7 +112,6 @@
 #define PD_MICP        (1 << 23)
 #define PD_MICN        (1 << 24)
 #define PD_ADC2          (1 << 1)
-#define PL_VCM3        (1 << 0)
 
 //ANALOG_CTRL_REG3(0x0080 00A4)
 
@@ -122,15 +128,15 @@
 #define I2S_CONFIG_WORDLENGTH_MASK              (0x1F << 0)
 
 /////////////HP_IN  ADC23_IN
-#define SOURCE_DAC           (0b001)
+#define SOURCE_DAC           (0b100)
 #define SOURCE_LINEIN        (0b010)
-#define SOURCE_MIC           (0b100)
+#define SOURCE_MIC           (0b001)
 #define SIGNAL_SRC_MUTE      0
 #define SIGNAL_SRC_MAX       (SOURCE_DAC|SOURCE_LINEIN|SOURCE_MIC)
 
-#define SOURCE_DAC_MASK           (0b001)
+#define SOURCE_DAC_MASK           (0b100)
 #define SOURCE_LINEIN_MASK        (0b010)
-#define SOURCE_MIC_MASK           (0b100)
+#define SOURCE_MIC_MASK           (0b001)
 #define SOURCE_MIXED_ALL_MASK 	   (SOURCE_DAC_MASK|SOURCE_LINEIN_MASK|SOURCE_MIC_MASK)
 
 

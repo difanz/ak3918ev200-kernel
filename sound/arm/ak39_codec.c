@@ -212,7 +212,7 @@ static inline void pd_ref_enable(struct ak39_codec *codec)
 	u32 reg_val;
 
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-	reg_val &= ~PD_REF;     //power on codec
+	reg_val &= ~PD_BIAS;     //power on codec
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 }
 
@@ -221,7 +221,7 @@ static inline void pd_ref_disable(struct ak39_codec *codec)
 	u32 reg_val;
 
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-	reg_val |= PD_REF;     //power off codec
+	reg_val |= PD_BIAS;     //power off codec
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 }
 
@@ -250,8 +250,8 @@ static void set_cur_vcm2_dischg(struct ak39_codec *codec, unsigned long value)
 {
 	int reg_val;
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-	reg_val &= ~(0x1f << 4);
-	reg_val |= (value << 4);
+	reg_val &= ~MASK_DIS_CHG_VCM2;
+	reg_val |= DIS_CHG_VCM2(value);
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 }
 
@@ -276,8 +276,8 @@ void ak39_set_hp_in(struct ak39_codec *codec, unsigned long signal)
 {
 	unsigned long reg_val;
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-    reg_val &= ~(0x7 << 12);
-    reg_val |= ((signal&0x7) << 12);
+    reg_val &= ~MASK_HP_IN;
+    reg_val |= ((signal&0x7) << HP_IN_SHIFT);
     REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 }
 
@@ -365,19 +365,11 @@ static void set_bit_depipa_noise_ctrl(struct ak39_codec *codec, int mode)
 
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
 
-	if(mode == DEPIPA_NOISE_USE_MAX_RESISTOR) {
-		reg_val |= (PRE_EN1);
-		reg_val |= (PRE_EN2);
-	} else if(mode == DEPIPA_NOISE_USE_3KOHM_RESISTOR) {
-		reg_val |= (PRE_EN1);
-		reg_val &= ~(PRE_EN2);
-	} else if(mode == DEPIPA_NOISE_USE_1KOHM_RESISTOR) {
-		reg_val &= ~(PRE_EN1);
-		reg_val |= (PRE_EN2);
-	} else {
-		reg_val &= ~(PRE_EN1);
-		reg_val &= ~(PRE_EN2);
-	}
+	/* Only PRE_EN exists here; bit 16 belongs to HP_IN. */
+	if(mode == DEPIPA_NOISE_NOT_USE)
+		reg_val &= ~(PRE_EN);
+	else
+		reg_val |= (PRE_EN);
 
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 }
@@ -391,25 +383,24 @@ static void ak39_set_vcm_ref_power(struct ak39_codec *codec, bool bOn)
 		//add power control here for MIC-to-Lineout channel
 		//power on REF
 		reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-		reg_val &= ~(PD_REF | PL_VCM2 );
+		reg_val &= ~(PD_BIAS | PL_VCM3 );
 		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 
-		//power on vcm2/vcm3
+		//power on vcm3
 	    reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-	    reg_val &= ~(PD_VCM2 | PD_VCM3);
+	    reg_val &= ~(PD_VCM3);
 	    REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 	}
 	else
 	{
-		//power off vcm2/vcm3
+		//power off vcm3
 	    reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-	    reg_val |= (PD_VCM2);
-	    reg_val |= (PD_VCM3);           
+	    reg_val |= (PD_VCM3);
 	    REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 
 	    //power off codec
 	    reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
-	    reg_val |= (PD_REF | PL_VCM2);
+	    reg_val |= (PD_BIAS | PL_VCM3);
 	    REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 	}
 }
@@ -430,14 +421,13 @@ void ak39_set_hp_power(struct ak39_codec *codec, bool bOn, bool soft_de_pipa)
 	printk("ak39_set_hp_power %d,soft_de_pipa=%d\n",bOn,soft_de_pipa);
 	if(bOn)
 	{
-//		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) |= (PL_VCM2);
 		set_bit_depipa_noise_ctrl(codec, DEPIPA_NOISE_USE_MAX_RESISTOR);
 					
 		mdelay(10);
 
 		pd_ref_enable(codec);
 
-		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) |= (0x7UL << 29);
+		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) |= MASK_DISCHG_HP;
 
 		mdelay(20);
 		reg_value = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
@@ -452,13 +442,13 @@ void ak39_set_hp_power(struct ak39_codec *codec, bool bOn, bool soft_de_pipa)
 
 		ak39_set_vcm_ref_power(codec, 1);
 		
-		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~(0x1f << 4);
+		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~MASK_DIS_CHG_VCM2;
 		set_cur_vcm2(codec, 0x1e);
 		mdelay(100);
 		
 		set_bit_depipa_noise_ctrl(codec, DEPIPA_NOISE_NOT_USE);
 		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~(RST_DAC);
-		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~(0x7UL << 29);
+		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~MASK_DISCHG_HP;
 	}
 	else
 	{
@@ -466,8 +456,7 @@ void ak39_set_hp_power(struct ak39_codec *codec, bool bOn, bool soft_de_pipa)
 
 		if (!codec->adc2_state) {
 			//off mute
-			REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~(0x7 << 12);
-		//	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) |= (0x1f << 4);
+			REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~MASK_HP_IN;
 
 			ak39_set_vcm_ref_power(codec, 0);
 			set_cur_vcm2_dischg(codec, 0x1f);
@@ -1242,18 +1231,13 @@ void ak39_codec_adc2_open(struct ak_codec_dai *dai)
 	REG32(codec->analog_ctrl_base + MULTIPLE_FUN_CTRL_REG1) |= IN_DAAD_EN; //enable internal
 
 	//disable vcm2 discharge
-	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~(0x1f << 4);
+	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~MASK_DIS_CHG_VCM2;
 
-	//SelVcm3
-	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) |= VCM3_SEL;
-
-	//PowerOn Vcm2/3
+	//PowerOn Vcm3
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~PD_VCM3;
-	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~PD_VCM2;
 
 	//SetVcmNormal
-	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~PL_VCM2;
-	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) &= ~PL_VCM3;
+	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) &= ~PL_VCM3;
 
 	//EnableAdc2Limit
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) |= ADC_LIM;
@@ -1310,15 +1294,14 @@ void ak39_codec_adc2_close(struct ak_codec_dai *dai)
 	//Power off adc2
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) |= PD_ADC2;
 
-	if((2 << 12) != (REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) & (2 << 12)))
+	if((SOURCE_LINEIN << HP_IN_SHIFT) !=
+	   (REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) & (SOURCE_LINEIN << HP_IN_SHIFT)))
 	{
 		if(!(REG32(codec->analog_ctrl_base + CLOCK_CTRL_REG) & DAC_CLK_EN))
 		{
 			reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1);
 			reg_val |= PD_VCM3;
-			reg_val |= PD_VCM2;
-			reg_val |= PL_VCM2;
-			//reg_val |= PD_REF;
+			reg_val |= PL_VCM3;
 			REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG1) = reg_val;
 			pd_ref_disable(codec);
 
