@@ -700,7 +700,7 @@ static unsigned long get_adc2_osr_div(struct ak39_codec *codec, unsigned char *m
 	unsigned long clk168m;
 	
 	clk168m = ak39_codec_get_asic_pll_clk(codec);
-    max_div = 0x40;
+    max_div = 0x100;
     SR_save = 0;
     *mode_sel = 0;
     *mclkdiv = 0;

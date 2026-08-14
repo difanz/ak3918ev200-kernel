@@ -49,8 +49,8 @@
 #define MASK_DAC_DIV_INT		(0xFF << 4)
 #define DAC_DIV_INT(val)		(((val)&0xFF) << 4)
 
-//HIGHSPEED_CLOCK_CTRL_REG(0x0800 0010) -- EV200's ADC2_DIV field is 6 bits
-//wide (0x3F); do not widen it to match a different board revision.
+//HIGHSPEED_CLOCK_CTRL_REG(0x0800 0010) -- ADC2_HCLK_DIV is 6 bits and
+//ADC2_DIV is 8; the two dividers in this register are not the same width.
 #define ADC2_HSDIV_VLD		(1 << 29)
 #define ADC2_HCLK_EN		(1 << 28)
 #define MASK_ADC2_HCLK_DIV	(0x3F << 20)
@@ -61,8 +61,8 @@
 #define DAC_HCLK_DIV(val)	(((val)&0xFF)<<10)
 #define ADC2_DIV_VLD	(1 << 9)
 #define ADC2_CLK_EN		(1 << 8)
-#define MASK_ADC2_DIV	(0x3F << 0)
-#define ADC2_DIV(val)	((val)&0x3F)
+#define MASK_ADC2_DIV	(0xFF << 0)
+#define ADC2_DIV(val)	((val)&0xFF)
 
 
 //SOFT_RST_CTRL_REG(0x08000020)
