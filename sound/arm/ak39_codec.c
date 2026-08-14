@@ -343,9 +343,9 @@ void ak39_set_mic_gain(struct ak39_codec *codec, unsigned long gain)
 	unsigned long reg_val = 0;
 
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-	reg_val &= ~(0x7<<10);
-	reg_val |= ((gain&0x7)<<10);
-	reg_val |= (1<<15); //double Mic gain
+	reg_val &= ~MASK_MIC_GAIN;
+	reg_val |= ((gain&0x7) << MIC_GAIN_SHIFT);
+	reg_val |= MIC_GAINBST;
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
 }
 
