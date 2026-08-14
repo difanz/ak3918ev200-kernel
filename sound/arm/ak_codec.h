@@ -106,6 +106,8 @@
 #define PD_BIAS			(1 << 0)
 
 //ANALOG_CTRL_REG2(0x0080 00A0)
+#define MASK_PD_LINEIN	(0x3 << 19)
+#define PD_LINEIN_RUN	(0x1 << 20)
 #define PD_MIC			(1 << 21)
 #define PD_S2D			(1 << 27)
 #define ADC_LIM        (1 << 28)

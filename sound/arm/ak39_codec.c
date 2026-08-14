@@ -488,19 +488,12 @@ void ak39_set_hp_power(struct ak39_codec *codec, bool bOn, bool soft_de_pipa)
  */
 static void ak39_set_linein_power(struct ak39_codec *codec, bool bOn)
 {
-	unsigned long reg_val = 0;
-	if(bOn)
-	{
-		reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-	    reg_val &= ~(1 << 14); //power on the channel
-	    REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
-	}
-	else
-	{
-		reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-		reg_val |= (1 << 14); //power off the channel
-		REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
-	}
+	unsigned long reg_val;
+
+	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
+	reg_val &= ~MASK_PD_LINEIN;
+	reg_val |= bOn ? PD_LINEIN_RUN : MASK_PD_LINEIN;
+	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
 }
 
 /**
