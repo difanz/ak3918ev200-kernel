@@ -289,12 +289,26 @@ void ak39_set_hp_in(struct ak39_codec *codec, unsigned long signal)
  * @param[in]    signal:  DAC|LINEIN|MIC
  * @return  void
  */
+static unsigned long adc2_in_field(unsigned long signal)
+{
+	unsigned long field = 0;
+
+	if (signal & SOURCE_DAC)
+		field |= ADC_IN_DAC;
+	if (signal & SOURCE_LINEIN)
+		field |= ADC_IN_LINEIN;
+	if (signal & SOURCE_MIC)
+		field |= ADC_IN_MIC;
+
+	return field;
+}
+
 void ak39_set_adc2_in(struct ak39_codec *codec, unsigned long signal)
 {
 	unsigned long reg_val;
 	reg_val = REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2);
-	reg_val &= ~(0x7 << 2);
-	reg_val |= ((signal&0x7) << 2);
+	reg_val &= ~MASK_ADC_IN;
+	reg_val |= (adc2_in_field(signal) << ADC_IN_SHIFT);
 	REG32(codec->analog_ctrl_base + ANALOG_CTRL_REG2) = reg_val;
 }
 
