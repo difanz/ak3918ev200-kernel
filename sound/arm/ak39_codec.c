@@ -705,17 +705,9 @@ static unsigned long get_adc2_osr_div(struct ak39_codec *codec, unsigned char *m
     *mode_sel = 0;
     *mclkdiv = 0;
 
-    if (des_sr > 24000)
-    {
-        OSR_value = 256;
-        *mode_sel = 1; //48k mode
-    }
-    else
-    {
-        OSR_value = 512;
-        *mode_sel = 0; //16k mode
-    }
-    
+    OSR_value = 256;
+    *mode_sel = 1;
+
     for(k=0; k<max_div; k++) //DIV
     {
         out_sr = clk168m/(k+1)/OSR_value;
