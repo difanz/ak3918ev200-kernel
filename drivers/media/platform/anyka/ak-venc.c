@@ -468,7 +468,7 @@ static int ak_venc_program(struct ak_venc_ctx *ctx, struct vb2_buffer *src,
 		ctx->rc_dirty = false;
 	}
 
-	intra = ak_venc_gop_is_intra(&ctx->gop);
+	intra = ak_venc_gop_is_intra(&ctx->gop) || ak_venc_gop_forced(&ctx->gop);
 	ak_venc_rc_before(&ctx->rc, intra, &ctx->rc_frame);
 
 	/* SPS and PPS lead every IDR; the core writes the slice NAL's own
@@ -525,6 +525,8 @@ static int ak_venc_program(struct ak_venc_ctx *ctx, struct vb2_buffer *src,
 	akcam_h8290_frames_apply(&ctx->frames, &ctx->regs);
 
 	ctx->frame_intra = intra;
+	if (intra)
+		ak_venc_gop_forced_done(&ctx->gop);
 	ak_venc_vb_copy_timestamp(dst, src);
 	return 0;
 }
@@ -699,7 +701,7 @@ static irqreturn_t ak_venc_irq(int irq, void *data)
 				 "output buffer full; counted in venc_stats from here on\n");
 		ak_venc_stop_core(dev);
 		if (!ctx->frame_jpeg)
-			ctx->gop.since_idr = 0;
+			ak_venc_gop_restart(&ctx->gop);
 		break;
 	case AKCAM_H8290_BUS_ERROR:
 		if (ak_venc_note(dev, AK_VENC_EV_BUS_ERROR))
@@ -707,14 +709,14 @@ static irqreturn_t ak_venc_irq(int irq, void *data)
 				 "bus error or timeout; counted in venc_stats from here on\n");
 		ak_venc_stop_core(dev);
 		if (!ctx->frame_jpeg)
-			ctx->gop.since_idr = 0;
+			ak_venc_gop_restart(&ctx->gop);
 		break;
 	case AKCAM_H8290_SW_RESET:
 		if (ak_venc_note(dev, AK_VENC_EV_SW_RESET))
 			v4l2_err(&dev->v4l2_dev,
 				 "core reset itself; counted in venc_stats from here on\n");
 		if (!ctx->frame_jpeg)
-			ctx->gop.since_idr = 0;
+			ak_venc_gop_restart(&ctx->gop);
 		break;
 	default:
 		break;
@@ -868,7 +870,7 @@ static int ak_venc_start_streaming(struct vb2_queue *vq, unsigned int count)
 		ctx->aborting = false;
 		ctx->frame_num = 0;
 		ctx->idr_pic_id = 0;
-		ctx->gop.since_idr = 0;
+		ak_venc_gop_restart(&ctx->gop);
 	}
 	ctx->streaming++;
 
@@ -1372,7 +1374,7 @@ static int ak_venc_s_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	case V4L2_CID_MPEG_MFC51_VIDEO_FORCE_FRAME_TYPE:
 		if (ctrl->val == V4L2_MPEG_MFC51_VIDEO_FORCE_FRAME_TYPE_I_FRAME)
-			ctx->gop.since_idr = 0;
+			ak_venc_gop_request_intra(&ctx->gop);
 		break;
 	case AK_VENC_CID_INTRA_QP_DELTA:
 		ctx->rc_cfg.intra_qp_delta = ctrl->val;
