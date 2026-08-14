@@ -18,6 +18,7 @@
 #include <media/v4l2-mem2mem.h>
 #include <media/videobuf2-core.h>
 
+#include "ak-venc-gop.h"
 #include "ak-venc-regs.h"
 #include "ak-venc-rc.h"
 
@@ -314,28 +315,6 @@ size_t ak_venc_headers(u8 *out, size_t out_cap,
  * and the start offset in swreg37. Returns the bit count, 0..56.
  */
 unsigned ak_venc_hdr_remainder(const u8 *hdr, size_t len, u32 *msb, u32 *lsb);
-
-/* -------------------------------------------------------------------------
- * Which frames are coded intra. Ported from lib/video/akcam_gop.h.
- * ------------------------------------------------------------------------- */
-
-struct ak_venc_gop {
-	unsigned gop;		/* frames between intra frames, >= 1 */
-	unsigned since_idr;	/* 0 forces the next frame intra */
-};
-
-static inline int ak_venc_gop_is_intra(const struct ak_venc_gop *g)
-{
-	return !(g->since_idr && g->since_idr < g->gop);
-}
-
-static inline void ak_venc_gop_advance(struct ak_venc_gop *g, int intra)
-{
-	if (intra)
-		g->since_idr = 1;
-	else
-		g->since_idr++;
-}
 
 /* -------------------------------------------------------------------------
  * The driver
