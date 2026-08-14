@@ -244,6 +244,8 @@
 };
 
 &adc_dac {
+	/* ADC2_CONFIG/DATA at 0x20118000 extend the block through 0x2011800F. */
+	reg = <0x08000000 0xffff>, <0x20110000 0x8010>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&speak_gpio_pins>;
 
