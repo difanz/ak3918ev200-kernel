@@ -107,11 +107,11 @@
 
 //ANALOG_CTRL_REG2(0x0080 00A0)
 #define VDD_MIC_SEL		(1 << 25)
-#define PD_S2D			(1 << 22)
+#define PD_S2D			(1 << 27)
 #define ADC_LIM        (1 << 21)
 #define PD_MICP        (1 << 23)
 #define PD_MICN        (1 << 24)
-#define PD_ADC2          (1 << 1)
+#define PD_ADC2          (1 << 26)
 
 //ANALOG_CTRL_REG3(0x0080 00A4)
 
@@ -128,6 +128,7 @@
 #define I2S_CONFIG_WORDLENGTH_MASK              (0x1F << 0)
 
 /////////////HP_IN  ADC23_IN
+/* HP_IN only; ADC2's source field takes the reverse (DAC 0b001, MIC 0b100). */
 #define SOURCE_DAC           (0b100)
 #define SOURCE_LINEIN        (0b010)
 #define SOURCE_MIC           (0b001)
